@@ -1,0 +1,17 @@
+{
+  "description": "Guardrails for e2e-browser-testing: block Edit/Write on the source checklist file during an active run.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-source-file.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+# Run report — {title}
+
+**Source**: `{source_path}`
+**Ran at**: {ran_at}
+**Executor**: {executor_model}
+**Browser**: {browser}
+**Source SHA256**: `{source_sha256}`
+
+## Summary
+
+| Status | Count |
+|---|---|
+| PASS | 0 |
+| FAIL | 0 |
+| BLOCKED | 0 |
+| UNVERIFIED | 0 |
+| SKIPPED | 0 |
+| PENDING | {step_count} |
+
+## Results
+
+{results_table}
+
+## Bugs
+
+_No bugs reported yet. Each bug must follow this shape:_
+
+```
+### Bug #N — <short title>   [blocker|major|minor|cosmetic]
+- Step reference: <id> (section: <section>)
+- Observed: <what actually happened, verbatim from snapshot/curl/logs>
+- Expected: <what should have happened, per the checklist>
+- Reproduction:
+  1. <step>
+  2. <step>
+- Evidence: evidence/<file>.png, evidence/<file>.json
+- Environment: <url>, <browser/version>, <build sha if known>
+```
+
+Bug records are self-contained blocks a stronger model (e.g. Opus) can ingest one at a time to propose fixes — no code in this file.

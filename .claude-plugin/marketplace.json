@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "gazzumatteo-claude-plugins",
+  "version": "0.1.0",
+  "description": "Claude Code plugins and skills by Matteo Gazzurelli — testing, automation, and productivity tools for NQL and beyond",
+  "owner": {
+    "name": "Matteo Gazzurelli",
+    "email": "matteo@duckma.com"
+  },
+  "plugins": [
+    {
+      "name": "e2e-browser-testing",
+      "description": "Execute E2E test checklists (markdown) via browser automation with Playwright. Produces structured result reports with bug records.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Matteo Gazzurelli",
+        "email": "matteo@duckma.com"
+      },
+      "source": "./plugins/e2e-browser-testing",
+      "category": "testing"
+    }
+  ]
+}

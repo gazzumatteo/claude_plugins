@@ -59,11 +59,14 @@ run_phase() {
     hash=$(shasum -a 256 "$log" 2>/dev/null | awk '{print $1}')
   fi
   # try to pull sensible counts per phase
-  # NOTE: grep -c returns exit 1 when zero matches, so we use `|| true` + tail -n1
-  # to guarantee a single integer token even with `set -o pipefail` active.
+  # NOTE: grep -c returns exit 1 on zero matches AND prints nothing (not "0") on
+  # binary-contaminated logs. We force text mode with -a so ANSI escapes / null
+  # bytes from test runners don't silently zero out the count. `|| true` plus
+  # `tail -n1` + `${n:-0}` fallback guarantee a single integer token under
+  # `set -o pipefail`.
   count_matches() {
     local n
-    n=$({ grep -cE "$1" "$2" 2>/dev/null || true; } | tail -n1)
+    n=$({ grep -acE "$1" "$2" 2>/dev/null || true; } | tail -n1)
     echo "${n:-0}"
   }
   local passed=0 failed=0 errors=0

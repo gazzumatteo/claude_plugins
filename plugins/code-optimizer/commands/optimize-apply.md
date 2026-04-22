@@ -105,7 +105,14 @@ After the executor returns, run `Bash git diff --name-only HEAD` and `Bash git l
 
 ### D. In dry-run mode
 
-Gather all previews and write them to `<out_dir>/batches/<batch_id>/preview.md`. Do NOT invoke regression-guard. Mark items as "previewed" in a scratch file (NOT in the checklist). Move to the next batch.
+Gather all previews and write them to `<out_dir>/batches/<batch_id>/preview.md`. Do NOT invoke regression-guard. Mark items as "previewed" in a scratch file (NOT in the checklist).
+
+Then clean up the per-batch state created in step B — dry-run batches must not leak:
+
+- `Bash git update-ref -d refs/code-optimizer/batch-<batch_id>` (drop the ref).
+- Keep `<out_dir>/batches/<batch_id>/preview.md` so the user can review, but remove `<out_dir>/batches/<batch_id>/untracked-before.txt` (`Bash rm -f -- <path>`).
+
+**Skip steps E and F entirely** and continue to the next batch.
 
 ### E. Otherwise, guard against regression
 

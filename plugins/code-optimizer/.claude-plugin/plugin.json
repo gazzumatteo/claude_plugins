@@ -1,6 +1,6 @@
 {
   "name": "code-optimizer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scan, plan, apply, and verify code optimizations across a project — deduplication, type consolidation, dead-code removal, cycle breaking, type strengthening, error-handling cleanup, AI-slop removal, and common code smells. Multi-language (TS/JS, Python, generic) with a regression-safety net (baseline + per-batch rollback).",
   "author": {
     "name": "Matteo Gazzurelli",

@@ -1,11 +1,11 @@
 ---
 name: optimization-playbook
-description: Reference playbook for code-optimizer scanners and executors. Defines 11 optimization categories with detection criteria, red flags (what NOT to touch), safe refactor recipes, and regression indicators. Load when scanning a category or when applying a fix and you need to check "is this actually safe to do here?".
+description: Reference playbook for code-optimizer scanners and executors. Defines 14 optimization categories with detection criteria, red flags (what NOT to touch), safe refactor recipes, and regression indicators. Load when scanning a category or when applying a fix and you need to check "is this actually safe to do here?".
 ---
 
 # Code optimization playbook
 
-This is the single source of truth for all 11 optimization categories handled by the `code-optimizer` plugin. Every scanner and the executor reference their own section before acting.
+This is the single source of truth for all 14 optimization categories handled by the `code-optimizer` plugin. Every scanner and the executor reference their own section before acting.
 
 ## How to use this playbook
 
@@ -18,7 +18,7 @@ This is the single source of truth for all 11 optimization categories handled by
 ```json
 {
   "id": "<CATEGORY>-<NNN>",
-  "category": "deduplication|type-consolidation|dead-code|circular-deps|type-strengthening|error-handling|slop-removal|complexity|magic-constants|naming|excessive-parameters",
+  "category": "deduplication|type-consolidation|dead-code|circular-deps|type-strengthening|error-handling|slop-removal|complexity|magic-constants|naming|excessive-parameters|feature-envy|god-class|primitive-obsession",
   "severity": "high|medium|low",
   "confidence": "high|medium|low",
   "files": ["relative/path.ts:START-END", "..."],
@@ -338,6 +338,109 @@ Functions with too many positional arguments or boolean flags.
 **Regression indicators**
 - Default values dropped in the refactor → a call site that relied on defaults now gets `undefined`.
 - Argument order swap during refactor (same-typed params accidentally flipped).
+
+---
+
+## 12. FEATURE ENVY
+
+Methods that "prefer" another object's state or behavior to their own — candidates for Move Method.
+
+**Detection criteria**
+- Inside a method of class `A` (or a function in module `M`), count `this.*` / self accesses vs accesses to a distinct external target `b.*`.
+- Emit when, for one distinct target, `target_accesses ≥ 3` AND `target_accesses / max(self_accesses, 1) ≥ 2`, AND the method body is ≥ 10 LOC.
+- Free-function variant: function in module `M` that operates almost entirely on fields of one parameter `x: X` imported from another module.
+
+**Red flags — do NOT move**
+- Controllers / use-cases / mediators / façades: coordinating multiple collaborators *is* their job.
+- Mappers / adapters / DTO converters: reading one object's fields to write another is their purpose — moving destroys the boundary.
+- Cross-bounded-context targets (e.g. `src/billing/*` method envying `src/auth/*`): moving across contexts creates illegitimate coupling. Never propose.
+- Infrastructure ports (`logger`, `metrics`, `eventBus`, `tracer`, `clock`): heavy use is expected and fine.
+- Framework-imposed accessor chains (`this.req.body.user.id` in an HTTP handler): the chain is structural, not envy.
+- Short delegation methods (< 10 LOC). Too small to be a smell.
+
+**Safe refactor recipe (Move Method)**
+1. Identify the method `A.m()` and the envied target `B`.
+2. Verify `B` is in the same bounded context as `A` — if not, STOP.
+3. Create `B.mFromA(a: A)` (or an equivalent domain-named method) with the moved logic.
+4. Replace `A.m()`'s body with a thin delegate: `return this.b.mFromA(this)`. Keep the delegate for ONE batch so call sites do not have to change in lockstep.
+5. In a follow-up batch, migrate call sites to `b.mFromA(a)` and remove `A.m()`.
+6. Lint + typecheck + tests after each step.
+
+**Regression indicators**
+- New import direction from `B` to `A` that did not exist → possible new cycle; re-run `cycle-mapper` after the batch.
+- Hot-path indirection: the extra delegate call matters only in benchmark-sensitive code — measure if relevant.
+
+**Defaults**: `severity: medium`, `confidence: medium`, `risk: medium`, `requires_manual_review: true` (always in v1).
+
+---
+
+## 13. GOD CLASS / GOD MODULE / GOD FUNCTION
+
+Classes, modules, or functions concentrating too many responsibilities.
+
+**Detection criteria**
+- **God Class**: `loc > 300` OR `public_methods > 20` OR `internal_deps > 7`.
+- **God Module** (no dominant class): `loc > 500` OR `top-level exports > 15` OR `internal_deps > 12`.
+- **God Function**: `function_loc > 100` AND ≥ 3 disjoint field/parameter clusters in the body.
+- Responsibility clusters: group public methods by the set of private fields they touch; ≥ 2 disjoint groups → the class wants to split.
+
+**Red flags — do NOT split**
+- Generated code (`**/generated/**`, `*.pb.*`, `*.codegen.*`, Prisma client). Size is irrelevant; never touch.
+- Entry points / bootstraps (`main.*`, top-level `index.ts`, `app.ts`, `server.ts`, `worker.ts`, framework route files) whose body is just wiring + registration.
+- DDD aggregate roots enforcing compound invariants: big by design, splitting leaks the invariant. Prefer `requires_manual_review: true` with an explicit "confirm aggregate status" reason.
+- State machines / parsers expressed as one `switch` or `match`: more readable than 17 micro-classes.
+- Performance-critical monolithic algorithms (tokenizers, renderers, solvers).
+- DI-heavy orchestrators where the "dependency count" is injected ports — high fan-in is a usage signal.
+
+**Safe refactor recipe (Extract Class / Extract Module)**
+1. Identify one cohesive cluster of methods that touch a disjoint subset of fields.
+2. Name the cluster with a domain term (`OrderPricing`, not `OrderHelper`).
+3. Extract the first collaborator; have the God Class hold it via composition and delegate.
+4. Keep delegate methods on the God Class for ONE batch to preserve call sites.
+5. Repeat one cluster per batch — never two.
+6. Lint + typecheck + tests after each extraction.
+
+**Regression indicators**
+- Shared invariants that used to span fields now split across the boundary → possible race or inconsistency. Write the invariant-preserving test first.
+- The God Class is serialized (JSON, protobuf, DB row): extracting fields breaks the wire/storage format. Flag as high-risk and keep the original shape at the serialization boundary.
+- Existing tests couple to the old public surface: update tests *before* concluding the batch.
+
+**Defaults**: `severity: high` when ≥ 2 thresholds cross together, otherwise `medium`/`low`; `confidence: high` for objective counts; `risk: medium` (or `high` when serialized); `requires_manual_review: true` (always in v1).
+
+---
+
+## 14. PRIMITIVE OBSESSION
+
+Domain concepts (email, phone, IBAN, money, `userId`, …) represented as raw primitives when a branded type or value object would prevent drift.
+
+**Detection criteria**
+- **Rule A** — Repeated primitive without a domain type: the concept appears ≥ 5 times in non-test, non-boundary code and no branded type / value object exists for it in the repo.
+- **Rule B** — Drift against an existing domain type: a branded type / value object already exists (e.g. `type UserId = string & { __brand }` under `src/domain/` or `src/shared/types/`) but other files still pass the raw primitive for the same concept.
+- Standard name patterns → primitive pairs: `email*`/`*Email` → `string`; `phone*` → `string`; `iban|bic|swift|vat*|partitaIva|codiceFiscale|ssn|taxId` → `string`; `*Id` → `string|number`; `amount|price|total|cost|balance|fee|*Money|*Cents` → `number`; `timestamp|*At|*Date` → `string|number`.
+
+**Red flags — do NOT introduce a value object**
+- DTOs / request / response / schema files (`*.dto.*`, `*.request.*`, `*.response.*`, `*.schema.*`): they are serialized — primitives are *correct*. Branded types live inside the domain, never at the wire.
+- Library-produced types (Prisma, Zod, Yup, Joi, protobuf): never fight the tool's output.
+- Config / env values, feature-flag keys.
+- Migrations, seeds, fixtures.
+- Generic identifiers without domain semantics (`cacheKey`, `slug`, `ref`).
+- JavaScript projects without TypeScript: branded types don't exist. Consider class wrappers only when occurrences are overwhelming AND there is evidence of real bugs from primitive confusion.
+
+**Safe refactor recipe (Introduce Value Object / Branded Type)**
+1. Define the branded type in a neutral domain location (`src/domain/<concept>.ts` or `src/shared/types/<concept>.ts`), with a factory that validates on construction:
+   - TS: `type Email = string & { readonly __brand: unique symbol }` + `export const mkEmail = (raw: string): Email => { /* validate */ return raw as Email }`.
+   - Python: `NewType('Email', str)` + a separate validator function, or a `@dataclass(frozen=True)` value object.
+2. Migrate internal signatures first: services, domain methods, internal repositories.
+3. DTOs stay `string`. Conversion happens *at the boundary*: `mkEmail(request.email)` inside the service entry point.
+4. Never cast raw → branded without running the factory's validation.
+5. Lint + typecheck after each migration batch — surprises often reveal real bugs (two primitives used interchangeably that should not have been).
+
+**Regression indicators**
+- Serialization changed: the value object's JSON output MUST match the pre-refactor primitive exactly.
+- Strict-equality semantics: `email1 === email2` must still work for branded strings. For class value objects, provide `.equals()` and document that `===` no longer compares value.
+- Call-site cascade: changing `(userId: string)` to `(userId: UserId)` ripples to every caller — batch by module to keep diffs legible.
+
+**Defaults**: `severity: high` for Rule B (active drift), `medium`/`low` for Rule A; `confidence: medium` (high for Rule B with an identified canonical type path); `risk: low-to-medium`; `requires_manual_review: true` (always in v1).
 
 ---
 

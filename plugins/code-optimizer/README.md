@@ -8,12 +8,12 @@ Built for the reality of AI-assisted codebases: duplications that "look" similar
 
 | Command | What it does |
 |---|---|
-| `/optimize:scan` | Read-only audit across 11 categories → `findings.json` + scan report |
+| `/optimize:scan` | Read-only audit across 14 categories → `findings.json` + scan report |
 | `/optimize:plan` | Turn findings into a prioritized, user-approved checklist |
 | `/optimize:apply` | Apply the checklist in batches with regression guard + rollback |
 | `/optimize:verify` | Final verdict against the recorded baseline |
 
-## The 11 categories
+## The 14 categories
 
 | Category | What it finds |
 |---|---|
@@ -28,6 +28,9 @@ Built for the reality of AI-assisted codebases: duplications that "look" similar
 | **magic-constants** | Hardcoded numbers/strings → named constants |
 | **naming** | Same concept with different names across the codebase |
 | **excessive-parameters** | Functions with > 4 params or ≥ 2 boolean flags |
+| **feature-envy** | Methods that access another object's state more than their own — Move Method candidates |
+| **god-class** | Classes / modules / functions concentrating too many responsibilities (LOC / method-count / deps) |
+| **primitive-obsession** | Domain concepts (email, IBAN, money, `userId`, …) represented as raw primitives — value-object candidates |
 
 Each category has an entry in `skills/optimization-playbook/SKILL.md` with detection criteria, red flags (what NOT to touch), a safe-refactor recipe, and regression indicators.
 
@@ -144,7 +147,8 @@ Orchestration:
 Scanners (one per category):
 - `dedup-scanner`, `type-consolidator`, `dead-code-hunter`, `cycle-mapper`,
   `type-strengthener`, `error-handler-auditor`, `slop-remover`,
-  `complexity-auditor`, `constants-hunter`, `naming-auditor`, `parameter-auditor`
+  `complexity-auditor`, `constants-hunter`, `naming-auditor`, `parameter-auditor`,
+  `feature-envy-scanner`, `god-class-scanner`, `primitive-obsession-scanner`
 
 ## Requirements
 

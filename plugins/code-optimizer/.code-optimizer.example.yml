@@ -20,6 +20,9 @@ categories:
   - magic-constants
   - naming
   - excessive-parameters
+  - feature-envy
+  - god-class
+  - primitive-obsession
 
 # The project's own commands. Used for baseline + regression guard + verify.
 # Leave unset to let the plugin guess from package.json scripts / pyproject.toml.

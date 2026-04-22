@@ -1,6 +1,6 @@
 ---
 name: optimization-architect
-description: Orchestrates the 11 code-optimizer scanners in parallel and aggregates their findings. Receives the ecosystem info + static-tool raw outputs, dispatches one Task per scanner, collects each scanner's JSON array into a single directory for parse_findings.py. Does not itself detect issues and does not modify code.
+description: Orchestrates the 14 code-optimizer scanners in parallel and aggregates their findings. Receives the ecosystem info + static-tool raw outputs, dispatches one Task per scanner, collects each scanner's JSON array into a single directory for parse_findings.py. Does not itself detect issues and does not modify code.
 model: sonnet
 color: purple
 tools:
@@ -21,7 +21,7 @@ The orchestrator (`/optimize:scan`) passes you:
 - `out_dir` — absolute path where you place scanner outputs (`<out_dir>/findings-per-scanner/`)
 - `raw_dir` — where static tools dumped their output (`<out_dir>/raw/`)
 - `ecosystem_json` — path to the output of `detect_ecosystem.sh`
-- `enabled_categories` — array of category names to run (subset of the 11)
+- `enabled_categories` — array of category names to run (subset of the 14)
 - `include_paths` / `exclude_paths` — optional glob lists
 - `config` — parsed `.code-optimizer.yml` if present
 
@@ -61,6 +61,9 @@ The orchestrator (`/optimize:scan`) passes you:
 | magic-constants       | `constants-hunter`         |
 | naming                | `naming-auditor`           |
 | excessive-parameters  | `parameter-auditor`        |
+| feature-envy          | `feature-envy-scanner`     |
+| god-class             | `god-class-scanner`        |
+| primitive-obsession   | `primitive-obsession-scanner` |
 
 ## Rules
 

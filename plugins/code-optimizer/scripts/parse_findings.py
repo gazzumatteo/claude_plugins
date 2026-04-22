@@ -47,6 +47,9 @@ CATEGORY_ORDER = [
     "magic-constants",
     "naming",
     "excessive-parameters",
+    "feature-envy",
+    "god-class",
+    "primitive-obsession",
 ]
 
 

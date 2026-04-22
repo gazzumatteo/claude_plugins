@@ -1,5 +1,5 @@
 ---
-description: Read-only audit of the codebase across 11 optimization categories — produces findings.json + a markdown scan report. Never modifies source files.
+description: Read-only audit of the codebase across 14 optimization categories — produces findings.json + a markdown scan report. Never modifies source files.
 argument-hint: [--categories a,b,c] [--paths "src/**"] [--exclude "dist/**"] [--out .optimize]
 allowed-tools: Read, Bash, Glob, Grep, Task, AskUserQuestion
 model: sonnet
@@ -7,13 +7,13 @@ model: sonnet
 
 # Optimize: scan
 
-You orchestrate a read-only scan of the project across the 11 optimization categories handled by this plugin. You do NOT detect issues yourself — the `optimization-architect` dispatches specialized scanners in parallel. This command produces a findings report and writes nothing to source files.
+You orchestrate a read-only scan of the project across the 14 optimization categories handled by this plugin. You do NOT detect issues yourself — the `optimization-architect` dispatches specialized scanners in parallel. This command produces a findings report and writes nothing to source files.
 
 ## Arguments
 
 `$ARGUMENTS` may contain:
 
-- `--categories <list>` — comma-separated subset of: `deduplication, type-consolidation, dead-code, circular-deps, type-strengthening, error-handling, slop-removal, complexity, magic-constants, naming, excessive-parameters`. Default: all.
+- `--categories <list>` — comma-separated subset of: `deduplication, type-consolidation, dead-code, circular-deps, type-strengthening, error-handling, slop-removal, complexity, magic-constants, naming, excessive-parameters, feature-envy, god-class, primitive-obsession`. Default: all.
 - `--paths <glob>` — include-glob relative to repo root. Default: from `.code-optimizer.yml` or `src/**`.
 - `--exclude <glob>` — exclude-glob. Default: `**/node_modules/**, **/dist/**, **/build/**, **/__generated__/**, **/.next/**`.
 - `--out <dir>` — output directory relative to repo root. Default: `.optimize`.

@@ -75,6 +75,9 @@ For `SKIPPED_NEEDS_REVIEW` and `ERROR`, also include `"reason": "..."`.
 - **magic-constants** — constants go into a co-located `constants.ts` / `constants.py` unless the finding specifies otherwise.
 - **naming** — use IDE-like rename semantics: find the symbol, rename references across the files in `files[]`. Do not grep the whole repo; the finding already enumerated the scope.
 - **excessive-parameters** — introduce the options type in the same file, unless multiple callers cross file boundaries — then extract to `src/shared/types/`.
+- **feature-envy** — Move Method only within the same bounded context. Create the moved method on the target, leave a thin delegate on the original for ONE batch, then remove the delegate in a follow-up. Never move across bounded contexts regardless of ratio.
+- **god-class** — Extract Class one cluster at a time. Never remove the original class in the same batch as the extraction — keep delegates for one batch, clean up in the next. If the class is serialized (JSON/protobuf/DB row), preserve the wire shape at the serialization boundary.
+- **primitive-obsession** — Place the branded type / value object in a neutral domain location (`src/domain/<concept>.*` or `src/shared/types/<concept>.*`), with a validating factory. Migrate internal signatures only; DTOs and codegen files keep the primitive. Never cast raw → branded without running the factory.
 
 ## Output discipline
 

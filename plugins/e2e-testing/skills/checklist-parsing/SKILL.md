@@ -5,7 +5,7 @@ description: Reference for parsing E2E test checklists written in markdown. Cove
 
 # Checklist parsing reference
 
-The `e2e-browser-testing` plugin's deterministic parser (`scripts/parse_checklist.py`) classifies test checklists into 4 shapes. When it returns `shape=unknown`, or when a step's classification is ambiguous, use this reference.
+The `e2e-testing` plugin's deterministic parser (`scripts/parse_checklist.py`) classifies test checklists into 4 shapes. When it returns `shape=unknown`, or when a step's classification is ambiguous, use this reference.
 
 ## Shape 1 — Table
 

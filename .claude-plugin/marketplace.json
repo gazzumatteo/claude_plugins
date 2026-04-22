@@ -9,14 +9,14 @@
   },
   "plugins": [
     {
-      "name": "e2e-browser-testing",
-      "description": "Execute E2E test checklists (markdown) via browser automation with Playwright. Produces structured result reports with bug records.",
-      "version": "0.1.0",
+      "name": "e2e-testing",
+      "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright. Structured markdown + JSON reports.",
+      "version": "0.2.0",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@duckma.com"
       },
-      "source": "./plugins/e2e-browser-testing",
+      "source": "./plugins/e2e-testing",
       "category": "testing"
     }
   ]

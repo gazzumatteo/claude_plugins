@@ -1,9 +1,0 @@
-{
-  "name": "e2e-browser-testing",
-  "version": "0.1.0",
-  "description": "Execute E2E test checklists from markdown files via browser automation. Runs steps with Playwright MCP, asks the user when info is missing, produces structured markdown + JSON reports with bug records.",
-  "author": {
-    "name": "Matteo Gazzurelli",
-    "email": "matteo@duckma.com"
-  }
-}

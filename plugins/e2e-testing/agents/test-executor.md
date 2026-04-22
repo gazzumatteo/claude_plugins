@@ -87,7 +87,7 @@ Given a parsed run JSON file and a markdown report file, execute every test step
 
 Use `AskUserQuestion` in these situations — do not guess:
 
-- **Missing URL / credentials**: a step references a login or API but no URL/credential is available in prereqs or `.e2e-browser-testing.yml`.
+- **Missing URL / credentials**: a step references a login or API but no URL/credential is available in prereqs or `.e2e-testing.yml`.
 - **Ambiguous step**: the action text has two plausible readings that would test different things.
 - **Inconclusive verification**: the page loaded but the expected text is absent — could be a bug, could be flaky network. Ask; don't call it either way.
 - **Destructive action without pre-authorization**: step contains delete/drop/wipe/reset and project config does not have `auto_confirm_destructive: true`.

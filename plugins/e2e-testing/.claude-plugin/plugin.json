@@ -1,0 +1,9 @@
+{
+  "name": "e2e-testing",
+  "version": "0.2.0",
+  "description": "End-to-end testing workflow for markdown checklists: create them from code, validate them against changes, and execute them via Playwright browser automation. Produces structured markdown + JSON reports with bug records.",
+  "author": {
+    "name": "Matteo Gazzurelli",
+    "email": "matteo@duckma.com"
+  }
+}

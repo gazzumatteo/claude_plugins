@@ -36,7 +36,7 @@ Save stdout as the parsed JSON. Write it to `/tmp/e2e-parsed-<timestamp>.json` s
 
 ### 3. Check for per-project config
 
-Look for `.e2e-browser-testing.yml` in:
+Look for `.e2e-testing.yml` in:
 1. Directory of the checklist file
 2. Parent directory (repo root)
 

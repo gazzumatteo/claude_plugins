@@ -1,5 +1,5 @@
 {
-  "description": "Guardrails for e2e-browser-testing: block Edit/Write on the source checklist file during an active run.",
+  "description": "Guardrails for e2e-testing: block Edit/Write on the source checklist file during an active /run-checklist run.",
   "hooks": {
     "PreToolUse": [
       {

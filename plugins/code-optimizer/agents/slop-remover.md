@@ -84,4 +84,4 @@ For each comment of ≥ 1 line:
 - Do NOT modify files.
 - Do NOT emit findings for test-only files unless the slop is egregious (> 30 lines of commented code).
 - Preserve comments that cite issue numbers, RFCs, or incidents — those are WHY comments.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

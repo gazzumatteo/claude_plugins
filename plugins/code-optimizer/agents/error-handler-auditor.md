@@ -78,4 +78,4 @@ Read ~15 lines around the catch. Answer:
 - Do NOT modify files.
 - Do NOT flag catches that re-throw (`throw e`, `raise`) — those preserve the error.
 - Do NOT flag catches that transform errors into a typed `Result` / `Err` variant and return it — that's an explicit contract, not swallowing.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

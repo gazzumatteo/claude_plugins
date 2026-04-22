@@ -81,4 +81,4 @@ Use the heuristic approach (LOC + nesting + branch count).
 - Do NOT modify files.
 - Do NOT emit findings for test files (long tests are often fine).
 - Do NOT emit findings for generated / migration files.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

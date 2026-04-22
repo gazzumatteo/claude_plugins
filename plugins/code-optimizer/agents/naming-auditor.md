@@ -84,4 +84,4 @@ Per language, flag identifiers that violate the local casing convention:
 - Do NOT modify files.
 - Do NOT propose renaming external identifiers (API fields, DB columns, feature flags).
 - Default to `requires_manual_review: true` when the name also appears outside code files (migrations, docs, yaml).
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

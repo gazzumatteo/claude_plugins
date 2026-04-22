@@ -82,4 +82,4 @@ IDs start at 001 and increment. Keep descriptions short and factual.
 - Do NOT modify any file.
 - Do NOT load the entire repo; stay within `include_paths` / respect `exclude_paths`.
 - If you cannot confirm a candidate within 30s of reading, emit it with `requires_manual_review: true` and `confidence: "low"`.
-- Return ONLY the path to the written JSON as your final message.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

@@ -1,13 +1,13 @@
 ---
 description: Apply optimization findings in batches with regression guarding. Records a baseline, applies each batch via the executor, re-runs baseline, rolls back on regression. Never commits without explicit authorization.
-argument-hint: [--category <name>] [--batch-size N] [--dry-run] [--force-risky] [--out <dir>]
-allowed-tools: Read, Bash, Glob, Grep, Task, AskUserQuestion
+argument-hint: [--category <name>] [--batch-size N] [--dry-run] [--force-risky] [--keep-snapshots] [--out <dir>]
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task, AskUserQuestion
 model: sonnet
 ---
 
 # Optimize: apply
 
-You apply a prioritized checklist of optimization findings against the codebase, one batch at a time, with a regression-safety net. Source files change only through the `optimization-executor` subagent. You orchestrate: read checklist → baseline → batch → guard → commit or rollback → next batch.
+You apply a prioritized checklist of optimization findings against the codebase, one batch at a time, with a regression-safety net. **Source files** change only through the `optimization-executor` subagent — the scope-violation check in step C enforces this. Your own `Write/Edit` tools are for plugin artifacts under `<out_dir>/` (checklist, apply-session JSON) and never for source files under the repo tree. You orchestrate: read checklist → baseline → batch → guard → commit or rollback → next batch.
 
 ## Arguments
 
@@ -62,10 +62,10 @@ If the batch is empty after filtering, move to the next batch.
 
 ### B. Snapshot HEAD + working tree for rollback
 
-Create a persistent snapshot that covers BOTH tracked and untracked state, so rollback is complete even if the executor added new files:
+Create a persistent snapshot that covers tracked state, AND take a separate snapshot of the current untracked-files list so rollback can distinguish files the executor added from files the user already had untracked:
 
 ```
-batch_id=$(date +%s)-<shortid>
+batch_id="$(date +%s)-$(openssl rand -hex 3 2>/dev/null || echo $RANDOM)"
 snap=$(git stash create)                          # commit-ish of tracked+staged state; "" if nothing to stash
 head=$(git rev-parse --verify HEAD 2>/dev/null || true)
 # Persist the snapshot ref so it cannot be GC'd and survives if Claude restarts:
@@ -74,12 +74,15 @@ if [[ -n "$snap" ]]; then
 elif [[ -n "$head" ]]; then
   git update-ref "refs/code-optimizer/batch-$batch_id" "$head"
 fi
+# Snapshot untracked files so rollback doesn't rm files the user already had:
+mkdir -p "<out_dir>/batches/$batch_id"
+git ls-files --others --exclude-standard > "<out_dir>/batches/$batch_id/untracked-before.txt"
 ```
 
-Record in `<out_dir>/apply-session.json` under this batch:
+Record in `<out_dir>/apply-session.json` under this batch (use `Write` or `Edit` to merge into the session file):
 
 ```json
-{ "batch_id": "<id>", "snap_ref": "refs/code-optimizer/batch-<id>", "head": "<sha>", "created_files": [] }
+{ "batch_id": "<id>", "snap_ref": "refs/code-optimizer/batch-<id>", "head": "<sha>", "created_files": [], "untracked_before_path": "<out_dir>/batches/<id>/untracked-before.txt" }
 ```
 
 ### C. Execute each finding in the batch
@@ -115,11 +118,11 @@ Use `Task` with `subagent_type: regression-guard`:
 
 Expect a verdict JSON:
 
-- `verdict: "ok"` — mark every APPLIED item in the batch as `[x]` in the checklist. Record the new commit SHA (if commit strategy ≠ `stage_only`) in apply-session. You may now **drop the per-batch ref** once the batch is confirmed stable (optional — keeping them aids forensic rollback): `git update-ref -d refs/code-optimizer/batch-<id>`.
-- `verdict: "regression"` — ROLLBACK. Rollback must cover both tracked changes AND untracked files the executor added:
+- `verdict: "ok"` — mark every APPLIED item in the batch as `[x]` in the checklist. Record the new commit SHA (if commit strategy ≠ `stage_only`) in apply-session. **By default, drop the per-batch ref now** to avoid leaking refs across sessions: `Bash git update-ref -d refs/code-optimizer/batch-<id>`. If `--keep-snapshots` was passed, retain the ref for forensic rollback.
+- `verdict: "regression"` — ROLLBACK. Rollback must cover both tracked changes AND untracked files the executor created (but MUST NOT touch files the user already had untracked):
   1. `Bash git reset --hard refs/code-optimizer/batch-<id>` — restores tracked files.
-  2. For each path in the batch's `created_files[]` (from the session JSON): if it still exists on disk and is not tracked (`git ls-files --error-unmatch <path>` returns non-zero), remove it with `Bash rm -f -- <path>` (exact paths only; NEVER `git clean -fd` — that would blow away the user's unrelated untracked work including `.optimize/`).
-  3. Mark each item in the batch as `[~]` with note "regression: <phase> <diff summary>".
+  2. Read `<out_dir>/batches/<batch_id>/untracked-before.txt`. For each path in the batch's `created_files[]` (from the session JSON): if the path is **NOT** listed in `untracked-before.txt` AND the path is not tracked (`git ls-files --error-unmatch <path>` returns non-zero) AND it exists on disk, remove it with `Bash rm -f -- <path>`. Skip any path that was already in `untracked-before.txt` — that file was the user's work, untouched by the executor, and must be preserved. NEVER use `git clean -fd`.
+  3. Mark each item in the batch as `[~]` with note "regression: <phase> <diff summary>". Keep the ref `refs/code-optimizer/batch-<id>` so the user can re-inspect the failed batch.
   4. `AskUserQuestion`: "Continue with next batch or abort?" — continue / abort.
 
 ### F. Commit according to strategy

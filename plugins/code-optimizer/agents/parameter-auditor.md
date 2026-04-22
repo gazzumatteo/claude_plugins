@@ -77,4 +77,4 @@ For each function with > 4 params or ≥ 2 booleans, read the function + its cal
 - Do NOT modify files.
 - Do NOT propose signature changes on exported public-API functions without marking `requires_manual_review: true`.
 - Limit `files[]` to files actually affected by this specific function; do not broaden to every caller across the repo unless contained.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

@@ -78,4 +78,4 @@ Grep for numeric literals in code (exclude test files by default, include only i
 - Do NOT modify files.
 - Do NOT emit low-value findings (single-use magic numbers in tight local scope).
 - When a value is used with different units in different places (milliseconds vs seconds), flag as `requires_manual_review: true` — converting to a single constant requires choosing a unit.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

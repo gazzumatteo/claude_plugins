@@ -33,7 +33,7 @@ The orchestrator (`/optimize:scan`) passes you:
    - `repo_root`, `raw_dir`, `ecosystem_json`, `include_paths`, `exclude_paths`
    - Absolute path to write its Finding array: `<out_dir>/findings-per-scanner/<category>.json`
    - Reference to the playbook: `${CLAUDE_PLUGIN_ROOT}/skills/optimization-playbook/SKILL.md` and the specific section number for the scanner's category.
-   - A strict reminder: the scanner writes ONLY its JSON array file, nothing else. No code edits. No commentary on stdout.
+   - A strict reminder: the scanner must use the `Write` tool to save its JSON array to the `out_file` path, then return ONLY that path as its final message. No code edits. No JSON dumped to stdout. If a scanner has zero findings it must still `Write` an empty array `[]` so the aggregator knows the category was scanned.
 4. After all scanners return, list the files in `<out_dir>/findings-per-scanner/`, note which categories produced output and which are missing (scanner failure).
 5. Return a JSON summary:
 

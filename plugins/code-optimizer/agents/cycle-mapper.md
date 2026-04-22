@@ -73,5 +73,5 @@ For each confirmed cycle, read the files and identify the shared logic causing i
 
 - Do NOT modify files.
 - Do NOT emit findings for cycles entirely within generated/vendored directories.
-- If madge output is missing for TS/JS, produce empty output — don't fake cycles by grepping.
-- Return only the `out_file` path.
+- If madge output is missing for TS/JS, `Write` an empty array `[]` to `<out_file>` — don't fake cycles by grepping.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

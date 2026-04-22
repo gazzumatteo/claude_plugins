@@ -86,4 +86,4 @@ Same classification as TS.
 - Do NOT modify files.
 - If replacing `any` with a concrete type would require research beyond inspecting call sites, emit with `requires_manual_review: true` and `confidence: "medium"`.
 - Skip `*.d.ts` files, generated files, and `node_modules/`.
-- Return only the `out_file` path.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

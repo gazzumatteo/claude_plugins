@@ -78,4 +78,4 @@ Even then, set `confidence: "high"` but leave `requires_manual_review: true` if 
 - Do NOT modify files.
 - Never propose removing `index.ts` / `__init__.py` / framework-convention files.
 - If knip/vulture output is missing or empty for the ecosystem, produce NO findings and leave `<out_file>` with `[]`. Do not hallucinate candidates via pure grep — dead-code detection without tools has too many false positives.
-- Return only the `out_file` path as your final message.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

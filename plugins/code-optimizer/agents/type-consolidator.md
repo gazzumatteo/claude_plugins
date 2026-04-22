@@ -71,4 +71,4 @@ You are the **type consolidator scanner**. You find types that should be one.
 - Do NOT modify files.
 - Do NOT cross between layer boundaries unless drift is real.
 - If a type is re-exported via a barrel (`export * from './types'`), treat the re-export as the same definition, not a duplicate.
-- Return only the `out_file` path as your final message.
+- Use the `Write` tool to save the Finding JSON array to `<out_file>` (absolute path provided in the input). Then return ONLY that path as your final message — no commentary, no JSON dumped to stdout.

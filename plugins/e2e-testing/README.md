@@ -15,7 +15,7 @@ All three produce or consume the same markdown format, parsed by `scripts/parse_
 ## `/create-checklist`
 
 ```
-/create-checklist <feature-or-path-or-description> [--shape table|prose|nested|cli] [--out <path>]
+/create-checklist <feature-or-path-or-description> [--shape table|prose|nested|cli] [--out <path>] [--fast]
 ```
 
 Orchestrates two subagents:
@@ -117,6 +117,6 @@ Report files are written to `<checklist_dir>/.e2e-runs/<basename>.<YYYY-MM-DD-HH
 
 ## Requirements
 
-- [Playwright MCP](https://github.com/anthropics/claude-plugins-official) plugin installed (for `/run-checklist`)
+- Playwright MCP plugin installed (for `/run-checklist`) — e.g. [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) or the version packaged in [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official)
 - Python 3.10+
 - Optional: `claude-mem` MCP plugin — enables project-memory context during `/validate-checklist`

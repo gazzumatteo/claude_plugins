@@ -2,6 +2,13 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.3.0] — 2026-04-22
+
+### Added
+- `code-optimizer` plugin — scan, plan, apply, and verify code optimizations across 11 categories (deduplication, type consolidation, dead-code, circular deps, type strengthening, error handling, AI-slop removal, cognitive complexity, magic constants, naming inconsistency, excessive parameters). Multi-language (TS/JS, Python, generic) with static-tool integration (knip, madge, jscpd, vulture, radon) where available.
+- Four commands: `/optimize:scan` (read-only audit), `/optimize:plan` (prioritized checklist), `/optimize:apply` (batch apply with regression guard + rollback), `/optimize:verify` (final baseline diff).
+- Regression-safety net: captures lint/typecheck/test/build baseline before any change, re-runs after every batch, rolls back via `git reset --hard` on any regression. Never commits without explicit user authorization, never uses `--no-verify`.
+
 ## [0.2.0] — 2026-04-22
 
 ### Changed

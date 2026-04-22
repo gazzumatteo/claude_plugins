@@ -1,0 +1,54 @@
+# .code-optimizer.yml — per-project configuration for the code-optimizer plugin.
+# Place this file at the repo root. All fields are optional; the plugin auto-detects
+# what it can from package.json / pyproject.toml / go.mod when a value is missing.
+
+# Languages to scan. "auto" lets detect_ecosystem.sh decide based on the files present.
+# Explicit list example: ["ts", "js", "python", "go", "rust"]
+languages: auto
+
+# Categories enabled by default for /optimize:scan. The /optimize:plan command
+# will filter further based on user answers.
+categories:
+  - deduplication
+  - type-consolidation
+  - dead-code
+  - circular-deps
+  - type-strengthening
+  - error-handling
+  - slop-removal
+  - complexity
+  - magic-constants
+  - naming
+  - excessive-parameters
+
+# The project's own commands. Used for baseline + regression guard + verify.
+# Leave unset to let the plugin guess from package.json scripts / pyproject.toml.
+# An unset phase is SKIPPED (not treated as failure) in baseline/diff.
+commands:
+  lint: "npm run lint"
+  typecheck: "npm run typecheck"
+  test: "npm test"
+  build: "npm run build"
+
+# Glob filters. `include` defaults to "src/**"; `exclude` defaults to typical vendor/build dirs.
+paths:
+  include:
+    - "src/**"
+    - "app/**"
+    - "lib/**"
+  exclude:
+    - "**/node_modules/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/__generated__/**"
+    - "**/.next/**"
+    - "**/*.generated.*"
+
+# Safety knobs.
+batch_size: 1           # findings per batch — default 1 for maximum isolation
+risk_threshold: medium  # gate items above this risk unless --force-risky
+min_confidence: medium  # exclude findings below this confidence from the checklist
+allow_review_required: false
+
+# Commit strategy: stage_only | commit_per_batch | commit_per_category
+commit_strategy: stage_only

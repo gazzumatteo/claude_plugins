@@ -85,6 +85,15 @@ Record in `<out_dir>/apply-session.json` under this batch (use `Write` or `Edit`
 { "batch_id": "<id>", "snap_ref": "refs/code-optimizer/batch-<id>", "head": "<sha>", "created_files": [], "untracked_before_path": "<out_dir>/batches/<id>/untracked-before.txt" }
 ```
 
+**Writes to `apply-session.json` must be eager, not deferred.** Every step that changes session state is a mandatory checkpoint — persist IMMEDIATELY, do not accumulate changes in memory and flush at the end of the session:
+
+- After step B (snapshot taken): append the new batch entry.
+- After step C, per finding: append the finding id to `applied_ids`, `blocked_ids`, or `errored_ids` depending on the executor's verdict; append any `files_created` to the batch entry.
+- After step E (guard verdict): write the verdict and any regression notes onto the batch entry.
+- After step F (commit/stage): record the commit SHA (if any) and staged path count.
+
+A crashed or interrupted session must leave `apply-session.json` consistent with the on-disk state of the repo. If the user's next `/optimize:apply` sees `applied_ids: []` but finds a populated `batches/` directory, the previous run violated this rule.
+
 ### C. Execute each finding in the batch
 
 For each finding `f`, use `Task` with `subagent_type: optimization-executor`:
@@ -101,7 +110,14 @@ Collect the returned status JSON. Possible outcomes:
 - `SKIPPED_NEEDS_REVIEW` — no changes, mark `[-]`
 - `ERROR` — no changes, mark `[~]` with the error
 
-After the executor returns, run `Bash git diff --name-only HEAD` and `Bash git ls-files --others --exclude-standard`. Confirm every changed/new path is in `files_touched ∪ files_created`. If the executor modified a file outside its declared scope → **abort the batch immediately**: go straight to the rollback sequence in step E as if a regression occurred, and mark the item `[~]` with note "scope-violation: modified <path>".
+After the executor returns, enforce the scope guard against the **finding's ground truth**, not against whatever the executor self-reports in `files_touched`. An executor that silently extends scope (e.g. editing a test suite to fix a mock broken by the refactor) must be caught here, even if its response dutifully lists the extra path in `files_touched`.
+
+1. Build `allowed_modify_paths`: take `finding.files`, strip any `:<start>-<end>` line-range suffix from each entry, and collect the remaining file paths.
+2. Build `allowed_create_paths`: the `files_created[]` returned by the executor, filtered through a whitelist — each new path MUST be under a neutral domain location (`src/`, `app/`, `lib/`, `packages/*/src/`) AND must NOT match any of: `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`, `**/__mocks__/**`, `**/fixtures/**`, `**/snapshots/**`, `**/*.snap`, `package.json`, `pyproject.toml`, `tsconfig*.json`, `.github/**`, `**/ci/**`. Any `files_created` entry failing this filter = scope violation.
+3. Run `Bash git diff --name-only HEAD` → the set `modified_paths`. Every entry must be in `allowed_modify_paths`. A diff touching a path outside that set = scope violation — even if the executor listed it in its own `files_touched` response.
+4. Run `Bash git ls-files --others --exclude-standard` → the set `new_untracked_paths`. Every entry outside `<out_dir>/` must be in `allowed_create_paths`.
+
+If ANY of the three checks fails → **abort the batch immediately**: go straight to the rollback sequence in step E as if a regression occurred, and mark the item `[~]` with note `scope-violation: <offending path> (<which check>)`. Do NOT accept the executor's self-report as authoritative.
 
 ### D. In dry-run mode
 
@@ -131,6 +147,7 @@ Expect a verdict JSON:
   2. Read `<out_dir>/batches/<batch_id>/untracked-before.txt`. For each path in the batch's `created_files[]` (from the session JSON): if the path is **NOT** listed in `untracked-before.txt` AND the path is not tracked (`git ls-files --error-unmatch <path>` returns non-zero) AND it exists on disk, remove it with `Bash rm -f -- <path>`. Skip any path that was already in `untracked-before.txt` — that file was the user's work, untouched by the executor, and must be preserved. NEVER use `git clean -fd`.
   3. Mark each item in the batch as `[~]` with note "regression: <phase> <diff summary>". Keep the ref `refs/code-optimizer/batch-<id>` so the user can re-inspect the failed batch.
   4. `AskUserQuestion`: "Continue with next batch or abort?" — continue / abort.
+  5. **No implicit retry.** A regressed (or scope-violating) batch is **final** for this session. Do NOT re-invoke the executor on the same finding with a different approach, do NOT create a parallel batch directory (e.g. `<out_dir>/batches/<batch_id>-retry/`), do NOT mutate `<batch_id>` to try again. The finding stays `[~]` until the user re-runs `/optimize:apply` explicitly, or re-plans the scope, or passes `--force-risky`. Silent retries are how orphan batch directories and double-spent snapshot refs happen.
 
 ### F. Commit according to strategy
 
@@ -147,8 +164,12 @@ NEVER use `--no-verify`. NEVER `git push`. If a pre-commit hook fails, report, d
 After the loop ends (or user aborts):
 
 1. Update `<out_dir>/checklist.md` with final statuses.
-2. Write `<out_dir>/apply-session.json` with summary: applied / skipped / blocked / errored.
-3. Print summary:
+2. Write `<out_dir>/apply-session.json` with summary: applied / skipped / blocked / errored (most fields should already be populated by the eager writes — this step only finalizes `completed_at` and rolls up the summary counts).
+3. **Cleanup `<out_dir>/batches/`**:
+   - Delete any `.DS_Store` (or analogous OS-noise) files anywhere under `<out_dir>/batches/`.
+   - For each subdirectory of `<out_dir>/batches/`: if the corresponding batch in `apply-session.json` has verdict `ok` AND `--keep-snapshots` was NOT passed, remove the subdirectory (the snapshot ref was already deleted in step E). If verdict is `regression` or `scope-violation`, KEEP the subdirectory for forensic inspection. If the subdirectory has no corresponding batch entry in `apply-session.json` (orphan from an interrupted earlier run or a spontaneous retry), delete it.
+   - Never `rm -rf` outside `<out_dir>/batches/`. Cleanup is scoped to this directory only.
+4. Print summary:
 
 ```
 ## Apply complete

@@ -5,6 +5,7 @@ model: sonnet
 color: purple
 tools:
   - Read
+  - Write
   - Bash
   - Glob
   - Grep
@@ -45,7 +46,7 @@ You do NOT decide: the final markdown formatting (that's the writer).
 
 ## Output contract — JSON skeleton
 
-Return **only** a JSON object (no markdown, no commentary) matching this schema:
+`Write` a JSON object to `/tmp/e2e-skeleton-<ts>.json` matching this schema. Do NOT include the JSON in your reply to the orchestrator — see the "Closing — return-message contract" section at the end of this file. Schema:
 
 ```json
 {
@@ -117,6 +118,21 @@ You cannot call `AskUserQuestion` — the orchestrator already did that once. If
 
 The orchestrator will surface this to the user.
 
-## Closing
+## Closing — return-message contract
 
-Return the JSON and nothing else. No prefacing paragraph, no trailing "hope this helps". Just the object. The orchestrator parses your stdout with `json.loads`.
+Do NOT dump the JSON skeleton in your reply to the orchestrator — that would inflate its context. Instead:
+
+1. `Write` the JSON skeleton to `/tmp/e2e-skeleton-<ts>.json` (the orchestrator passes a `<ts>` value, or pick one yourself with `date +%s`).
+2. Reply to the orchestrator with **one line only**, exactly in this shape:
+
+   ```
+   SKELETON_READY /tmp/e2e-skeleton-<ts>.json
+   ```
+
+If you cannot resolve the target, write a small JSON `{ "error": "...", "suggestions": [...] }` to the same path and reply:
+
+```
+SKELETON_FAILED /tmp/e2e-skeleton-<ts>.json
+```
+
+The orchestrator reads the file via `jq` for only the fields it needs.

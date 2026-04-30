@@ -22,13 +22,19 @@ You are the E2E **checklist writer**. Your job is purely mechanical: translate a
 
 ## Your single output
 
-A markdown file at the requested path. Return (as your stdout to the orchestrator) a one-line summary:
+A markdown file at the requested path. Reply to the orchestrator with **one line only**:
 
 ```
-wrote <path> — shape=<shape> steps=<N> bytes=<B>
+WRITER_DONE <output-path>
 ```
 
-Nothing else.
+If the parser still rejects the file after your retries, reply:
+
+```
+WRITER_FAILED <output-path> shape=<got> expected=<requested> step_count=<n>
+```
+
+Nothing else. No preamble, no trailing prose. The orchestrator re-runs the parser with `--out` and reads only the small summary.
 
 ## Rules common to all shapes
 
@@ -83,13 +89,17 @@ The parser REQUIRES: at least 3 markdown tables, at least one with a `Pass` / `S
 1. Read the skeleton JSON.
 2. Assemble the file in memory as a list of lines.
 3. `Write` it to the output path (the file does not exist yet — if it does, the orchestrator already confirmed overwrite with the user).
-4. Verify: run `${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <output>` via `Bash`. Read stdout.
-5. Self-check:
-   - `shape` matches the requested shape? If not, you have a structural problem — fix and rewrite.
-   - `step_count` matches skeleton's step count (±0 for table/prose/cli, allow ±0 for nested as long as every skeleton step maps to a checkbox)?
-   - All `destructive: true` from skeleton appear destructive in parser output?
-6. If the parser disagrees, amend the file (`Edit`) until it agrees. Do NOT return success with a failed parse.
-7. Return the one-line summary.
+4. Verify: run `${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <output> --out /tmp/e2e-writer-verify-<ts>.json` via `Bash`. Read only the small stdout summary; **do not `Read` the full JSON**.
+5. Self-check from the summary:
+   - `shape` matches the requested shape? If not, fix and rewrite.
+   - `step_count` matches skeleton's step count?
+6. For destructive-flag preservation, use `jq` against the verify JSON without loading it whole:
+   ```
+   jq '[.steps[] | select(.destructive)] | length' /tmp/e2e-writer-verify-<ts>.json
+   ```
+   Compare with the skeleton's destructive count (also via `jq`).
+7. If any check fails, amend the file (`Edit`) until it agrees. Do NOT reply success with a failed parse.
+8. Reply with the one-line `WRITER_DONE` (or `WRITER_FAILED`) contract.
 
 ## Don'ts
 

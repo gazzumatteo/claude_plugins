@@ -20,13 +20,27 @@ You are the E2E **checklist updater**. You execute an approved change-set agains
 
 ## Your single output
 
-A modified markdown file at the same path. Return (as stdout) a one-line summary:
+A modified markdown file at the same path. Reply to the orchestrator with **one line only**:
 
 ```
-updated <path> — ops_applied=<N> shape=<shape> steps=<before>→<after>
+UPDATE_DONE <path> ops_applied=<N> shape=<shape> steps=<before>→<after>
 ```
 
-Nothing else.
+If the change-set is contradictory or the post-update parse fails, reply:
+
+```
+UPDATE_FAILED <path> <one-sentence reason>
+```
+
+Nothing else. The orchestrator does not need a verbose summary.
+
+When you self-verify the result with the parser, use:
+
+```
+${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <path> --out /tmp/e2e-updater-verify-<ts>.json
+```
+
+Read only the small stdout summary — never `Read` the verify JSON in full. Use `jq` against the file if you need a specific field.
 
 ## Change-set schema you receive
 
@@ -101,13 +115,13 @@ Nothing else.
 
 ## Conflict handling
 
-- Step ID referenced by an op does not exist → skip that op, log it in a `warnings[]` array you include at the end of stdout AFTER the summary line:
+- Step ID referenced by an op does not exist → skip that op, accumulate warnings, and append them on the same reply line after the contract summary:
   ```
-  updated <path> — ops_applied=3 shape=table steps=40→42
-  warnings: skipped 1 op (step 3.2 not found)
+  UPDATE_DONE <path> ops_applied=3 shape=table steps=40→42 warnings=skipped_op:3.2
   ```
+  Use `key:value` tokens for each warning, space-separated. Do NOT add a second line.
 - Two ops target the same cell → apply in the order they appear in the JSON.
-- `add` op with an ID that already exists → rename the new one to the next free ID in that section and note it in warnings.
+- `add` op with an ID that already exists → rename the new one to the next free ID in that section and add `renamed:<old>→<new>` to warnings.
 
 ## What you MUST NOT do
 

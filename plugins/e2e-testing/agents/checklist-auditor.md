@@ -5,6 +5,7 @@ model: sonnet
 color: orange
 tools:
   - Read
+  - Write
   - Bash
   - Glob
   - Grep
@@ -29,7 +30,7 @@ Produce a JSON audit report classifying every potential change into one of four 
 
 ## Output contract — JSON audit report
 
-Return **only** this JSON object on stdout:
+`Write` this JSON object to `/tmp/e2e-validate-audit-<ts>.json`. Do NOT echo it in your reply to the orchestrator — see the "Closing — return-message contract" section at the end of this file. Schema:
 
 ```json
 {
@@ -171,6 +172,21 @@ Blend findings into `notes_from_memory`. If memory says "this feature was deprec
 
 For large diffs (>50 changed files) use the `Task` tool with `subagent_type: general-purpose` to delegate: "for each of these files, summarize the behavioral change in one sentence". Merge the summaries. This prevents you from reading hundreds of files sequentially.
 
-## Closing
+## Closing — return-message contract
 
-Return the JSON and nothing else. No preamble. The orchestrator parses your stdout with `json.loads`.
+Do NOT dump the audit JSON in your reply to the orchestrator (it would inflate the orchestrator's context). Instead:
+
+1. `Write` the full audit JSON to `/tmp/e2e-validate-audit-<ts>.json`. The orchestrator may pass a `<ts>` value; otherwise pick one with `Bash(date +%s)`.
+2. Reply to the orchestrator with **one line only**:
+
+   ```
+   AUDIT_COMPLETE /tmp/e2e-validate-audit-<ts>.json
+   ```
+
+If you encounter a fatal blocker (e.g. cannot find the original markdown), `Write` a minimal JSON `{ "error": "..." }` to the same path and reply:
+
+```
+AUDIT_FAILED /tmp/e2e-validate-audit-<ts>.json
+```
+
+The orchestrator extracts only what it needs via `jq`.

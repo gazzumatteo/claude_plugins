@@ -83,14 +83,19 @@ The writer returns the final path and a parse summary.
 Run:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <output-path>
+${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <output-path> --out /tmp/e2e-create-verify-<ts>.json
 ```
 
-Read stdout. Confirm:
+Stdout is a small summary; **do not `Read` the full JSON**. Confirm from the summary:
 
 - `shape` matches what was requested
-- `step_count` equals the number of steps in the skeleton (or architect's note explains any merges)
-- `steps[]` ids are unique
+- `step_count` equals the skeleton's count (or the architect's note explains any merges)
+
+For id-uniqueness check, use `jq` against the file:
+
+```
+jq '[.steps[].id] | length as $n | unique | length as $u | if $n==$u then "ok" else "duplicate ids" end' /tmp/e2e-create-verify-<ts>.json
+```
 
 If the parser returns `shape=unknown` or `step_count=0`, invoke the writer ONCE more with the parser output as feedback. If it still fails, stop and report.
 

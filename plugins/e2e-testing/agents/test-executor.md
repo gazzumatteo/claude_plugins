@@ -133,4 +133,29 @@ Do not batch. Save the run JSON after every step — crashes must not lose progr
 
 ## Closing the run
 
-When every step has a final status (not `pending`), call `browser_close` and terminate. The orchestrator runs the audit next.
+When every step has a final status (not `pending`), call `browser_close` and terminate.
+
+### Return-message contract (mandatory)
+
+Your final reply to the parent orchestrator MUST be a single line of the form:
+
+```
+RUN_COMPLETE <absolute-path-to-run-json>
+```
+
+If the run aborted, reply:
+
+```
+RUN_INCOMPLETE <absolute-path-to-run-json> <one-sentence-reason>
+```
+
+Do **not** summarize results, list steps, or include bug details in the reply. The run JSON contains everything; the orchestrator runs the audit next and reads what it needs via `jq`. Returning a verbose summary blows up the parent's context window.
+
+## Managing your own context
+
+A long checklist generates many `browser_snapshot` and `browser_network_requests` results, which accumulate in YOUR conversation history. To stay within budget:
+
+- Prefer `browser_take_screenshot` (file written to disk, small return) over `browser_snapshot` (full AX tree returned inline) when you only need visual evidence, not text assertions.
+- For text assertions, do exactly one `browser_snapshot` per step, immediately before the assertion. Don't re-snapshot to "double-check".
+- Save large CLI outputs to evidence files via shell redirection (`cmd > evidence/<id>.txt 2>&1`) and then `tail`/`grep` only what you need to verify.
+- Save the run JSON after every step so you can resume after a context-related failure without losing progress.

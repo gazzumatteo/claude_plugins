@@ -21,13 +21,13 @@ You orchestrate a review of an existing checklist. You do NOT judge the file you
 
 ### 1. Resolve and parse the existing checklist
 
-Verify the path exists (absolute via `Bash(realpath <path>)` or `Read`). Run:
+Verify the path exists with `Bash(realpath <path>)`. Run:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <absolute-path>
+${CLAUDE_PLUGIN_ROOT}/scripts/parse_checklist.py <abs-path> --out /tmp/e2e-validate-current-<ts>.json
 ```
 
-Save JSON to `/tmp/e2e-validate-current-<timestamp>.json`. Note: `shape`, `step_count`, `title`, `source_sha256`. The shape is load-bearing — the updater must preserve it.
+Stdout is a small summary; **do not `Read` the full JSON**. From the summary, note `shape`, `step_count`, `title`, `source_sha256`, `out_path`. The shape is load-bearing — the updater must preserve it.
 
 If `shape=unknown`, stop and report — the file is not a valid checklist as-is.
 
@@ -63,28 +63,27 @@ Check whether the claude-mem MCP tools are available (tools beginning with `mcp_
 
 If the MCP is not available OR returns nothing useful, note "no prior project memory found" and move on. Do NOT fabricate.
 
-### 5. Read the credentials / config references
+### 5. Read the config; record credentials path only
 
-If the parsed JSON has `credentials_ref`, `Read` it. If there's a `.e2e-testing.yml`, `Read` it. These are inputs to the auditor so it can flag prereqs that no longer match reality (e.g. `base_url` now points to a defunct env).
+If there's a `.e2e-testing.yml`, `Read` it (small file). If the summary has `credentials_ref`, record the path but do NOT read its content here — pass the path to the auditor and let the auditor decide whether to read it. This keeps secrets out of the orchestrator session.
 
 ### 6. Delegate the audit to `checklist-auditor`
 
 Use the `Task` tool with `subagent_type: checklist-auditor`. Pass:
 
-- Absolute path to the parsed checklist JSON
+- Absolute path to the parsed checklist JSON (from step 1's `out_path`)
 - Absolute path to the original markdown file (read-only to the auditor)
 - `baseline` commit SHA and the git log / diff outputs from step 3
-- The memory notes from step 4 (as a short prose paragraph, or "no memory available")
-- The credentials / config content from step 5
+- The memory notes from step 4 (a short prose paragraph, or "no memory available")
+- Path to credentials file and `.e2e-testing.yml` (if any) — auditor reads on demand
 - The repo root path
+- Return-message contract: "Your final reply must be one line: `AUDIT_COMPLETE <audit-json-path>`. Save the full report to `/tmp/e2e-validate-audit-<ts>.json` and reply with the path."
 
-The auditor returns a JSON report with: `obsolete[]`, `missing[]`, `ambiguous[]`, `unchanged_count`, `confidence`.
-
-Save to `/tmp/e2e-validate-audit-<timestamp>.json`.
+Read the audit JSON via `jq` for specific fields you need; do not load the whole document.
 
 ### 7. Present findings and ask followup questions
 
-Read the audit JSON. For every item the auditor marked as needing user input (typically everything in `ambiguous[]` and any `missing[]` where the fix is non-obvious), batch into a single `AskUserQuestion` call.
+Use `jq` to extract only what you need from the audit JSON (counts, ambiguous-titles, high-confidence obsolete/missing). Avoid `Read` on the audit file. For every item the auditor marked as needing user input (typically everything in `ambiguous[]` and any `missing[]` where the fix is non-obvious), batch into a single `AskUserQuestion` call.
 
 Group the questions sensibly — up to 4 per batch. If there are more than 4, ask the top 4 first, apply, then ask the rest. Each question offers:
 
@@ -129,7 +128,7 @@ The updater applies the ops, writes the file back, and re-runs the parser to con
 
 ### 11. Verify post-update
 
-Run the parser one more time on the updated file. Confirm:
+Re-parse with `--out /tmp/e2e-validate-after-<ts>.json` and use only the small stdout summary. Confirm:
 
 - `shape` unchanged
 - `step_count` matches the expected post-change count (original + added − removed)

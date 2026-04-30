@@ -13,7 +13,13 @@ Emits normalized JSON on stdout. Supports 4 shapes:
   - cli:     prose without UI cues
 
 Usage:
-    python3 parse_checklist.py <path-to-checklist.md>
+    python3 parse_checklist.py <path-to-checklist.md> [--out <full-json-path>]
+
+Without --out: full normalized JSON goes to stdout (legacy behavior).
+With --out:    full JSON is written to <full-json-path> and stdout receives
+               only a compact summary (title, shape, counts, paths). Use this
+               mode when the caller is an LLM orchestrator that must not pull
+               the whole step list into its context window.
 """
 
 from __future__ import annotations
@@ -388,28 +394,78 @@ def parse(path: Path) -> Checklist:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: parse_checklist.py <file>", file=sys.stderr)
+    args = argv[1:]
+    out_path: Path | None = None
+    positional: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--out":
+            if i + 1 >= len(args):
+                print("usage: parse_checklist.py <file> [--out <path>]", file=sys.stderr)
+                return 2
+            out_path = Path(args[i + 1])
+            i += 2
+            continue
+        if a.startswith("--out="):
+            out_path = Path(a.split("=", 1)[1])
+            i += 1
+            continue
+        positional.append(a)
+        i += 1
+
+    if len(positional) != 1:
+        print("usage: parse_checklist.py <file> [--out <path>]", file=sys.stderr)
         return 2
-    path = Path(argv[1])
+    path = Path(positional[0])
     if not path.exists():
         print(f"file not found: {path}", file=sys.stderr)
         return 1
+
     checklist = parse(path)
-    print(json.dumps(
-        {
-            "title": checklist.title,
-            "source_path": checklist.source_path,
-            "source_sha256": checklist.source_sha256,
-            "prereqs": checklist.prereqs,
-            "credentials_ref": checklist.credentials_ref,
-            "shape": checklist.shape,
-            "step_count": len(checklist.steps),
-            "steps": [asdict(s) for s in checklist.steps],
-        },
-        indent=2,
-        ensure_ascii=False,
-    ))
+    full = {
+        "title": checklist.title,
+        "source_path": checklist.source_path,
+        "source_sha256": checklist.source_sha256,
+        "prereqs": checklist.prereqs,
+        "credentials_ref": checklist.credentials_ref,
+        "shape": checklist.shape,
+        "step_count": len(checklist.steps),
+        "steps": [asdict(s) for s in checklist.steps],
+    }
+
+    if out_path is None:
+        print(json.dumps(full, indent=2, ensure_ascii=False))
+        return 0
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(full, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    destructive_count = sum(1 for s in checklist.steps if s.destructive)
+    needs_browser_count = sum(1 for s in checklist.steps if s.needs_browser)
+    needs_cli_count = sum(1 for s in checklist.steps if s.needs_cli)
+    sections: list[str] = []
+    seen: set[str] = set()
+    for s in checklist.steps:
+        if s.section and s.section not in seen:
+            sections.append(s.section)
+            seen.add(s.section)
+
+    summary = {
+        "out_path": str(out_path.resolve()),
+        "title": checklist.title,
+        "source_path": checklist.source_path,
+        "source_sha256": checklist.source_sha256,
+        "shape": checklist.shape,
+        "step_count": len(checklist.steps),
+        "destructive_count": destructive_count,
+        "needs_browser_count": needs_browser_count,
+        "needs_cli_count": needs_cli_count,
+        "prereqs_count": len(checklist.prereqs),
+        "credentials_ref": checklist.credentials_ref,
+        "sections": sections[:20],
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 
 

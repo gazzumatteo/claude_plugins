@@ -2,7 +2,6 @@
 description: Create a new E2E test checklist (markdown) by analyzing the project and emitting a file ready for /run-checklist
 argument-hint: <feature-or-path-or-description> [--shape table|prose|nested|cli] [--out <path>] [--fast]
 allowed-tools: Read, Bash, AskUserQuestion, Task, Glob, Grep
-model: sonnet
 ---
 
 # Create E2E checklist

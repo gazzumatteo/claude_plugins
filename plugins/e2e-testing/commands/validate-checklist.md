@@ -2,7 +2,6 @@
 description: Validate an existing E2E checklist against the current code — flag obsolete/missing steps, ask followups, then update the file in place
 argument-hint: <path-to-checklist.md> [--dry-run] [--since <git-ref>] [--no-memory]
 allowed-tools: Read, Bash, AskUserQuestion, Task, Glob, Grep, mcp__plugin_claude-mem_mcp-search__search, mcp__plugin_claude-mem_mcp-search__smart_search
-model: sonnet
 ---
 
 # Validate E2E checklist

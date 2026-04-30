@@ -2,7 +2,6 @@
 description: Execute an E2E test checklist (markdown) via browser automation and produce a structured report
 argument-hint: <path-to-checklist.md> [--fast] [--dry-run] [--only ids] [--from N]
 allowed-tools: Read, Bash, AskUserQuestion, Task, Glob, Grep
-model: sonnet
 ---
 
 # Run E2E checklist

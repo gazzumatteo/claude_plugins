@@ -2,6 +2,21 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.4.0] — 2026-05-01
+
+### Added (e2e-testing)
+- **`/run-checklist-local`** — companion to `/run-checklist` that offloads the browser-automation loop to a local OpenAI-compatible model (LM Studio, vLLM, …). Zero Claude tokens for screenshots and tool calls. Same checklist format, same final-reply shape; falls back gracefully when the local endpoint is unreachable.
+- New agent `e2e-runner-local` — verifies endpoint, dispatches the runner, summarizes the report.
+- New script `scripts/e2e_local_runner.py` — Playwright sync runner with vision + tool-calling agent loop, per-step context reset, latest-image-only history trimming, JSONL trace + screenshot per step, structured `report.json`.
+- New diagnostic `scripts/spike/spike_capability_check.py` — rerun whenever the model or LM Studio version changes; prints `GO / NO-GO` for reachability, vision grounding, and combined vision + tool calling.
+- Configuration cascade for `LMSTUDIO_*` env: shell env → `${CWD}/.e2e-testing.env` → `${XDG_CONFIG_HOME}/claude-e2e-testing/config.env` → plugin-dev fallback. Survives plugin updates and is shareable via dotfiles.
+- `--check-config` flag on the runner: diagnoses which cascade level provided each value, exits 0/2 for ok/incomplete.
+- Default evidence dir is now `<checklist-dir>/.e2e-runs/<timestamp>/` — matches the convention used by `/run-checklist`.
+
+### Notes (e2e-testing)
+- The local executor does NOT yet read credentials nor execute CLI-only steps — those steps are skipped with an explicit reason. Use `/run-checklist` (Claude-driven) for protected pages or CLI-heavy checklists. Local executor is best for long browser-only suites you iterate on frequently.
+- The `e2e-runner` Claude-driven path is unchanged and remains the default.
+
 ## [0.3.0] — 2026-04-22
 
 ### Added

@@ -1,3 +1,17 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# local secrets / private endpoints (repo is public)
+.env
+.env.local
+.env.*.local
+.e2e-testing.env
+
+# runner outputs
+.e2e-runs/
+plugins/e2e-testing/scripts/**/runs/
+plugins/e2e-testing/scripts/**/.cache/
+
+# Playwright MCP scratch dir
+.playwright-mcp/

@@ -674,11 +674,26 @@ def run_cli_only_step(
 
     commands = step.get("cli_commands") or []
     if not commands:
+        # Write the step's raw definition as evidence so the user can see exactly what
+        # the parser saw and why it failed to extract commands. Most common causes:
+        # unsupported language tag (only bash/sh/shell/zsh/no-tag are scanned), inline
+        # backticks instead of fenced blocks, or commands described only in prose.
+        (evidence / "step_definition.txt").write_text(
+            "Action:\n"
+            f"{step['action']}\n\n"
+            "Expected:\n"
+            f"{step.get('expected', '')}\n\n"
+            "----\n"
+            "The parser scans fenced code blocks tagged `bash`, `sh`, `shell`, `zsh`, "
+            "or with no language tag. If your block uses a different tag (`console`, "
+            "`yaml`, `dockerfile`, ...) or only inline backticks, the parser skips it. "
+            "Re-tag the fence as ```bash or wrap the command with explicit fences."
+        )
         duration = (dt.datetime.now() - started).total_seconds()
         return StepResult(
             id=step["id"], section=step.get("section", ""), action=step["action"],
             status="error", iterations=0,
-            notes="CLI step has no commands extracted by the parser",
+            notes="parser extracted no CLI commands — see step_definition.txt evidence",
             evidence_dir=str(evidence.relative_to(out_dir)), duration_s=duration,
         )
 
@@ -870,6 +885,14 @@ def main() -> int:
                             help="Tool name whose first invocation fails on step 2 (one-shot)")
     arg_parser.add_argument("--allow-destructive", action="store_true",
                             help="Run steps marked destructive (default: skip)")
+    arg_parser.add_argument("--only", default=None,
+                            help="Comma-separated step ids to run (e.g. '1.1,1.2,2.3'); "
+                                 "everything else is skipped with reason 'filtered by --only'.")
+    arg_parser.add_argument("--from", dest="from_id", default=None,
+                            help="Start from this step id inclusive — earlier steps are skipped. "
+                                 "Useful to resume a long checklist after the previous run was cut short.")
+    arg_parser.add_argument("--to", dest="to_id", default=None,
+                            help="Stop after this step id inclusive — later steps are skipped.")
     args = arg_parser.parse_args()
 
     project_root = Path(args.project_root).expanduser().resolve() if args.project_root else Path.cwd().resolve()
@@ -902,14 +925,42 @@ def main() -> int:
 
     client = OpenAI(base_url=base_url, api_key=api_key)
 
+    only_set: set[str] | None = None
+    if args.only:
+        only_set = {s.strip() for s in args.only.split(",") if s.strip()}
+    from_key = _step_key(args.from_id) if args.from_id else None
+    to_key = _step_key(args.to_id) if args.to_id else None
+
+    report_meta = {
+        "started_at": ts,
+        "model": model,
+        "base_url": base_url,
+        "checklist": title,
+        "checklist_source": source,
+        "config_origin": config_origin,
+        "scope": {
+            "only": sorted(only_set) if only_set else None,
+            "from": args.from_id,
+            "to": args.to_id,
+        },
+    }
+
     results: list[StepResult] = []
     fatal_error: str | None = None
+    final_status = "complete"
     try:
         with sync_playwright() as p:
             browser = None
             page: Page | None = None
             try:
                 for step in raw_steps:
+                    skip_reason = _scope_skip_reason(step["id"], only_set, from_key, to_key)
+                    if skip_reason:
+                        print(f"\n--- Step {step['id']}: SKIP ({skip_reason})")
+                        results.append(make_skipped(step, skip_reason))
+                        _write_report(out_dir, report_meta, results, fatal_error=None, status="in_progress")
+                        continue
+
                     r = _execute_step(
                         p, browser, page, step, args, client, model, project_root, out_dir,
                     )
@@ -918,39 +969,82 @@ def main() -> int:
                     step_result = r.step_result
                     print(_format_step_log(step_result))
                     results.append(step_result)
+                    # Incremental write: report.json reflects state after every step so a
+                    # SIGINT / Bash-window timeout / hard signal never loses what we've done.
+                    _write_report(out_dir, report_meta, results, fatal_error=None, status="in_progress")
             finally:
                 if browser is not None:
                     try:
                         browser.close()
                     except Exception:  # noqa: BLE001
                         pass
-    except Exception:  # noqa: BLE001 — top-level crash; surface in report.json instead of dying silently
+    except KeyboardInterrupt:
+        final_status = "interrupted"
+        fatal_error = "interrupted by KeyboardInterrupt (Ctrl-C, SIGINT, or Bash window timeout)"
+        print(f"\n[INTERRUPTED] {fatal_error} — flushing partial report", file=sys.stderr)
+    except Exception:  # noqa: BLE001
+        final_status = "crashed"
         fatal_error = traceback.format_exc()
         print(f"\n[FATAL] runner top-level crash captured into report.json:\n{fatal_error}", file=sys.stderr)
 
+    # Final write — even if everything above blew up, this runs.
+    summary = _write_report(out_dir, report_meta, results, fatal_error=fatal_error, status=final_status)
+    print(f"\nReport    : {out_dir / 'report.json'}")
+    print(f"Summary   : {summary}")
+    print(f"Status    : {final_status}")
+    if final_status != "complete":
+        return 2
+    return 0 if (summary["fail"] == 0 and summary["error"] == 0) else 1
+
+
+def _step_key(step_id: str) -> tuple:
+    """Convert a possibly-dotted step id ('1.2.10', '0.1', 'A.3') to a sortable key.
+    Numeric parts sort before string parts at each level so '1.10' > '1.9'."""
+    out = []
+    for part in step_id.split("."):
+        try:
+            out.append((0, int(part)))
+        except ValueError:
+            out.append((1, part))
+    return tuple(out)
+
+
+def _scope_skip_reason(
+    step_id: str,
+    only_set: set[str] | None,
+    from_key: tuple | None,
+    to_key: tuple | None,
+) -> str | None:
+    if only_set is not None and step_id not in only_set:
+        return "filtered by --only"
+    if from_key is not None and _step_key(step_id) < from_key:
+        return f"before --from {from_key}"
+    if to_key is not None and _step_key(step_id) > to_key:
+        return f"after --to {to_key}"
+    return None
+
+
+def _write_report(
+    out_dir: Path,
+    meta: dict[str, Any],
+    results: list[StepResult],
+    fatal_error: str | None,
+    status: str,
+) -> dict[str, int]:
     summary = {"total": len(results), "pass": 0, "fail": 0, "error": 0, "skipped": 0}
     for r in results:
         summary[r.status] = summary.get(r.status, 0) + 1
-
-    report: dict[str, Any] = {
-        "started_at": ts,
-        "model": model,
-        "base_url": base_url,
-        "checklist": title,
-        "checklist_source": source,
-        "config_origin": config_origin,
-        "summary": summary,
-        "steps": [asdict(r) for r in results],
-    }
+    report: dict[str, Any] = dict(meta)
+    report["status"] = status
+    report["summary"] = summary
+    report["steps"] = [asdict(r) for r in results]
     if fatal_error:
         report["fatal_error"] = fatal_error
-    (out_dir / "report.json").write_text(json.dumps(report, indent=2))
-    print(f"\nReport    : {out_dir / 'report.json'}")
-    print(f"Summary   : {summary}")
-    if fatal_error:
-        print("Status    : runner crashed mid-run — partial results in report.json (fatal_error field set)")
-        return 2
-    return 0 if (summary["fail"] == 0 and summary["error"] == 0) else 1
+    # Atomic write so an external reader never sees a half-written JSON.
+    tmp = out_dir / "report.json.tmp"
+    tmp.write_text(json.dumps(report, indent=2))
+    tmp.replace(out_dir / "report.json")
+    return summary
 
 
 @dataclass

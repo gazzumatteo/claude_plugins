@@ -71,8 +71,15 @@ Executes the checklist. The plugin:
 ## `/run-checklist-local` (zero-token alternative)
 
 ```
-/run-checklist-local <path-to-checklist.md> [--dry-run] [--headed] [--allow-destructive] [--max-iterations N]
+/run-checklist-local <path-to-checklist.md> [--dry-run] [--headed] [--allow-destructive] [--max-iterations N] [--only IDS] [--from ID] [--to ID]
 ```
+
+The scoping flags let you target a subset of a long checklist:
+- `--only 1.1,2.3,2.4` — run only those step ids; everything else is recorded as `skipped` with reason `filtered by --only`.
+- `--from 2.0` — resume from this step id inclusive (earlier steps are skipped). Useful to continue a previously-interrupted run.
+- `--to 1.10` — stop after this step id inclusive.
+
+Step ids are compared as dotted tuples, so `1.10` correctly sorts after `1.9`.
 
 Same input format as `/run-checklist` and (almost) same output, but execution happens on your machine: a Python script (`scripts/e2e_local_runner.py`) drives Playwright Chromium under the control of a local OpenAI-compatible model. Useful when you have a capable local model on hand and want to keep test runs out of your Claude budget.
 
@@ -161,11 +168,30 @@ When invoked from `/run-checklist-local`, the agent stops with a HITL prompt (of
 
 **Output:**
 
-- `scripts/runs/<timestamp>/report.json` — structured summary (steps, status, bugs, durations)
-- `scripts/runs/<timestamp>/step-<id>/screenshot.png` — last viewport screenshot per step
-- `scripts/runs/<timestamp>/step-<id>/trace.jsonl` — per-iteration tool calls + results
+- `<checklist-dir>/.e2e-runs/<timestamp>/report.json` — structured summary (steps, status, bugs, durations). The runner **rewrites this file after every step**, so a SIGINT or Bash-window timeout never loses what's already done. The `status` field is `in_progress` mid-run, `complete` on a clean exit, `interrupted` after a Ctrl-C / SIGINT, or `crashed` if a top-level exception escaped — in the latter two cases `fatal_error` carries the traceback.
+- `<checklist-dir>/.e2e-runs/<timestamp>/step-<id>/screenshot.png` — last viewport screenshot per browser step
+- `<checklist-dir>/.e2e-runs/<timestamp>/step-<id>/trace.jsonl` — per-iteration tool calls + results
+- `<checklist-dir>/.e2e-runs/<timestamp>/step-<id>/cli_results.json` + `transcript.txt` — for CLI-only steps
+- `<checklist-dir>/.e2e-runs/<timestamp>/step-<id>/step_definition.txt` — when the parser failed to extract `cli_commands` from a step tagged as CLI; shows the raw action+expected so you can see why and re-tag the fence as ```bash.
 
-The `runs/` directory is gitignored.
+The `.e2e-runs/` directory is gitignored.
+
+**Long checklists (>50 steps):**
+
+The slash-command Bash window inside Claude Code times out at 10 minutes. A 300-step checklist at ~30-40s/step takes ~3 hours of wall-clock — far past the limit. Two workflows handle this:
+
+- **Resume in pieces from the slash command.** Run `/run-checklist-local <path>` and let it go until it hits the timeout. Look at the last completed step id in `report.json` and re-launch with `--from <next-id>`. Repeat until the run is `complete`. Each invocation produces its own timestamped run dir, so reports stack chronologically.
+
+- **Run detached from the terminal.** Skip Claude entirely:
+  ```bash
+  uv run plugins/e2e-testing/scripts/e2e_local_runner.py \
+    --checklist docs/your-checklist.md \
+    --project-root . \
+    > .e2e-runs/runner.log 2>&1 &
+  ```
+  Tail the log when you want progress; the incremental `report.json` is always current. Resume the same way (`--from <id>`) if you need to fix something in the middle.
+
+The agent prompts you to choose between these (and a "scope it now" path) automatically when it sees a checklist over 50 steps.
 
 **When to use which:**
 

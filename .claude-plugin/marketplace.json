@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "gazzumatteo-claude-plugins",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Claude Code plugins and skills by Matteo Gazzurelli — testing, automation, and productivity tools for NQL and beyond",
   "owner": {
     "name": "Matteo Gazzurelli",
@@ -11,7 +11,7 @@
     {
       "name": "e2e-testing",
       "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright (Claude-driven OR zero-token local executor backed by LM Studio). Structured markdown + JSON reports.",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"

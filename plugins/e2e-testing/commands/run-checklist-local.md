@@ -1,6 +1,6 @@
 ---
 description: Execute an E2E test checklist via the LOCAL executor (Playwright + LM Studio). Zero Claude tokens for browser automation. Falls back to /run-checklist if the local endpoint is missing.
-argument-hint: <path-to-checklist.md> [--dry-run] [--headed] [--allow-destructive] [--max-iterations N]
+argument-hint: <path-to-checklist.md> [--dry-run] [--headed] [--allow-destructive] [--max-iterations N] [--only IDS] [--from ID] [--to ID]
 allowed-tools: Task
 ---
 

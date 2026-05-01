@@ -2,6 +2,17 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.5.1] — 2026-05-01
+
+### Fixed (e2e-testing)
+- **Critical: `report.json` now survives SIGINT / Bash-window timeout / hard kill.** Real-world test of a 331-step authenticated checklist hit the 10-minute slash-command Bash window at step 1.17 and lost everything because the final report was only written on clean exit. The runner now flushes `report.json` atomically (via `report.json.tmp` → rename) after **every step**, with a `status` field set to `in_progress` mid-run and switched to `complete` / `interrupted` / `crashed` in the top-level `try/finally`. `KeyboardInterrupt` is caught explicitly and the partial report carries `fatal_error` describing the cause.
+- The runner's `step_definition.txt` evidence file is now written when a step tagged as CLI has no commands the parser could extract — the user immediately sees the raw action+expected text and a hint explaining which fence tags the parser scans (`bash`, `sh`, `shell`, `zsh`, no-tag) so they can re-tag misclassified blocks.
+
+### Added (e2e-testing)
+- **`--only IDS` / `--from ID` / `--to ID`** flags on the runner. Comparison is dotted-tuple aware (`1.10 > 1.9`). Skipped steps are recorded as `status="skipped"` with a clear reason — they still appear in the report so post-run tooling has full coverage. Together with the incremental write these enable a clean resume workflow on long checklists.
+- The `e2e-runner-local` agent now warns the user once via `AskUserQuestion` when `step_count > 50` and no scoping flag was given, offering three paths: run anyway (relying on `--from <last-id>` to resume after timeout), pick a scope now, or run detached from the terminal entirely.
+- Agent now flags unrecognized arguments (e.g. `target=...` typos) instead of silently dropping them.
+
 ## [0.5.0] — 2026-05-01
 
 ### Added (e2e-testing)

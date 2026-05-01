@@ -32,6 +32,10 @@ Parse:
 - `--headed` → forward to runner (run with visible Chromium window).
 - `--allow-destructive` → forward (without it, destructive steps are skipped).
 - `--max-iterations N` → forward (default 8).
+- `--only IDS` → forward (comma-separated step ids, e.g. `1.1,2.3`).
+- `--from ID` → forward (resume from this id inclusive — earlier steps skipped).
+- `--to ID` → forward (stop after this id inclusive).
+- Anything else (including `key=value` style) → warn the user once: "ignoring unrecognized argument(s): X, Y" and proceed.
 
 If the checklist path is missing, reply `RUN_FAILED missing checklist path` and stop.
 
@@ -126,6 +130,12 @@ From the summary:
 - If `destructive_count > 0` and the user did not pass `--allow-destructive`, warn: "N destructive step(s) will be SKIPPED. Re-run with `--allow-destructive` to include them."
 - If `needs_cli_count > 0`, note: "M step(s) include CLI commands. Pure-CLI steps run via subprocess + single-turn LM verdict; mixed browser+CLI steps execute as browser-only (the bundled CLI commands are NOT auto-run inside a browser step yet)."
 - If `credentials_ref` is set, note it: the local runner currently does NOT read credentials. Tell the user the run will proceed without auth and may fail on protected pages.
+- **Long-checklist guard.** If `step_count > 50` and the user did NOT pass `--only`, `--from`, or `--to`, ask via `AskUserQuestion` ONCE before running:
+  - title: "This checklist has N steps — at ~30-40s/step that is roughly M minutes. Slash-command Bash windows time out at 10 minutes."
+  - options:
+    - **"Run it anyway — I'll resume with `--from` if it gets cut short"** — each completed step is flushed to `report.json` incrementally, so a SIGINT preserves partial results and `--from <next-id>` resumes cleanly.
+    - **"Scope the run — let me pick `--only` or `--from`/`--to`"** — ask a follow-up for the scope.
+    - **"Cancel — I'll run it in a detached terminal myself"** — `uv run <runner> --checklist <path> --project-root . > runner.log 2>&1 &`
 
 If `--dry-run`, emit the summary as a short prose block and stop with `RUN_DRY <parsed-json-path>`.
 

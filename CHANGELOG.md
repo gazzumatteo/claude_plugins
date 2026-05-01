@@ -2,6 +2,22 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.5.0] — 2026-05-01
+
+### Added (e2e-testing)
+- **CLI executor in `/run-checklist-local`** — pure-CLI steps (`needs_cli=True && !needs_browser`) are no longer skipped. The runner shells out each command (120s timeout, chain stops on first non-zero exit), captures stdout/stderr/exit_code per command, and asks the local model in a single text-only turn whether the transcript matches the expected outcome. Evidence: `cli_results.json` + `transcript.txt` per step.
+- **Lazy Chromium launch** — checklists that contain only CLI steps no longer spin up the browser; a 100% CLI suite runs in seconds.
+- **Loop guard** — when the same non-`finish_step` tool call repeats 3 times consecutively with identical arguments, the runner auto-fails the step with a clear note instead of burning the whole `--max-iterations` budget.
+
+### Fixed (e2e-testing)
+- **Critical: runner no longer crashes mid-run.** A `Page.screenshot` timeout in real-world tests previously aborted the whole process with no `report.json`. Now: `BrowserTools.take_screenshot()` catches `playwright.TimeoutError` and any `Exception`, returns `None`, and `run_step` falls back to a text-only message inviting the model to use `accessibility_snapshot`. Default screenshot timeout reduced from 30s to 10s — hung pages fail fast.
+- **`report.json` is always written** — even when a step blows up unexpectedly, the executing thread crashes outright, or the Playwright context fails to close. Each step iteration is now wrapped in `try/except` that converts an unhandled exception into `StepResult(status="error", error=traceback, ...)` and writes a `crash.txt` evidence file. A top-level crash sets `fatal_error` in the report so post-run tooling can distinguish "everything failed cleanly" from "the runner aborted".
+- LM Studio / Nemotron-3-Nano-Omni does not honor `tool_choice="required"`. The CLI executor now uses `tool_choice="auto"` with a content-based verdict fallback for servers that emit prose instead of a function call.
+
+### Notes (e2e-testing)
+- Authentication / credential injection is still NOT implemented — Phase 5 target. Checklists with login walls will fail at the auth step regardless of how robust the runner is.
+- Mixed browser+CLI steps still run as browser-only (the bundled `cli_commands` are not auto-executed inside a browser turn).
+
 ## [0.4.0] — 2026-05-01
 
 ### Added (e2e-testing)

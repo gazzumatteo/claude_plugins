@@ -43,6 +43,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -118,6 +119,8 @@ ACCESSIBILITY_SNAPSHOT_LIMIT = 8000
 TOOL_TIMEOUT_MS = 8000
 NAVIGATE_TIMEOUT_MS = 15000
 ASSERT_TIMEOUT_MS = 2500
+SCREENSHOT_TIMEOUT_MS = 10000  # hung pages should fail fast — don't wait Playwright's default 30s
+LOOP_GUARD_THRESHOLD = 3  # auto-fail after N identical consecutive tool calls
 
 SMOKE_CHECKLIST_TITLE = "smoke-inline-3-steps"
 SMOKE_CHECKLIST_STEPS = [
@@ -311,8 +314,17 @@ class BrowserTools:
         with (self.evidence_dir / "trace.jsonl").open("a") as f:
             f.write(json.dumps(payload) + "\n")
 
-    def take_screenshot(self) -> bytes:
-        png = self.page.screenshot(type="png", full_page=False)
+    def take_screenshot(self) -> bytes | None:
+        """Capture viewport screenshot. Returns None on failure so callers can fall
+        back to a text-only message — never let a screenshot timeout abort the run."""
+        try:
+            png = self.page.screenshot(type="png", full_page=False, timeout=SCREENSHOT_TIMEOUT_MS)
+        except PWTimeout as exc:
+            self._trace({"event": "screenshot_failed", "error": f"timeout: {exc}"})
+            return None
+        except Exception as exc:  # noqa: BLE001
+            self._trace({"event": "screenshot_failed", "error": f"{type(exc).__name__}: {exc}"})
+            return None
         (self.evidence_dir / "screenshot.png").write_bytes(png)
         return png
 
@@ -431,15 +443,25 @@ def run_step(
             "has been performed once without error. Do NOT repeat the same action looking for a "
             "visible change — call finish_step('pass') after the first successful tool result.\n"
         )
+    screenshot_note = (
+        "The current page screenshot is attached. Decide your next action per the workflow."
+        if initial_png is not None
+        else "[screenshot capture failed — proceeding text-only; consider calling accessibility_snapshot]"
+    )
     user_intro = (
         f"{section_line}"
         f"Step {step['id']}: {step['action']}\n"
         f"{expected_block}\n"
-        "The current page screenshot is attached. Decide your next action per the workflow."
+        f"{screenshot_note}"
     )
+    initial_content: list[dict[str, Any]] | str
+    if initial_png is not None:
+        initial_content = [{"type": "text", "text": user_intro}, b64_image(initial_png)]
+    else:
+        initial_content = user_intro
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system},
-        {"role": "user", "content": [{"type": "text", "text": user_intro}, b64_image(initial_png)]},
+        {"role": "user", "content": initial_content},
     ]
 
     final_status = "error"
@@ -447,6 +469,8 @@ def run_step(
     final_bugs: list[dict[str, Any]] = []
     iterations_used = 0
     error: str | None = None
+    last_call_signature: str | None = None
+    repeated_call_count = 0
 
     for iteration in range(max_iterations):
         iterations_used = iteration + 1
@@ -477,6 +501,24 @@ def run_step(
             final_status = "fail"
             final_notes = msg.content or "(no tool call and no content)"
             break
+
+        # Loop guard: detect identical consecutive calls (model stuck in a rut).
+        first_call = tool_calls[0]
+        signature = f"{first_call.function.name}|{first_call.function.arguments}"
+        if first_call.function.name != "finish_step":
+            if signature == last_call_signature:
+                repeated_call_count += 1
+            else:
+                repeated_call_count = 1
+                last_call_signature = signature
+            if repeated_call_count >= LOOP_GUARD_THRESHOLD:
+                tools._trace({"iter": iteration, "loop_guard_triggered": signature, "count": repeated_call_count})
+                final_status = "fail"
+                final_notes = (
+                    f"loop guard: identical {first_call.function.name} call repeated "
+                    f"{repeated_call_count}× without progress — auto-failed instead of looping."
+                )
+                break
 
         messages.append({
             "role": "assistant",
@@ -510,15 +552,23 @@ def run_step(
             if refresh:
                 png = tools.take_screenshot()
                 criterion = (step.get("expected") or step["action"])[:160]
-                nudge = (
-                    f"Updated screenshot after {tc.function.name}. "
-                    f"Re-check the success criterion (\"{criterion}\"). "
-                    "If it now holds, call finish_step('pass'). Otherwise emit the next tool call."
-                )
-                messages.append({
-                    "role": "user",
-                    "content": [{"type": "text", "text": nudge}, b64_image(png)],
-                })
+                if png is not None:
+                    nudge = (
+                        f"Updated screenshot after {tc.function.name}. "
+                        f"Re-check the success criterion (\"{criterion}\"). "
+                        "If it now holds, call finish_step('pass'). Otherwise emit the next tool call."
+                    )
+                    nudge_content: list[dict[str, Any]] | str = [
+                        {"type": "text", "text": nudge}, b64_image(png),
+                    ]
+                else:
+                    nudge_content = (
+                        f"Result of {tc.function.name} recorded; screenshot capture failed. "
+                        f"Re-check the success criterion (\"{criterion}\"). "
+                        "If it holds, call finish_step('pass'). Otherwise consider accessibility_snapshot "
+                        "to inspect the page, or finish_step('fail') if the page is unresponsive."
+                    )
+                messages.append({"role": "user", "content": nudge_content})
 
         if terminated:
             break
@@ -853,53 +903,36 @@ def main() -> int:
     client = OpenAI(base_url=base_url, api_key=api_key)
 
     results: list[StepResult] = []
-    with sync_playwright() as p:
-        browser = None
-        page: Page | None = None
-        try:
-            for step in raw_steps:
-                # Routing decisions
-                if step.get("destructive") and not args.allow_destructive:
-                    print(f"\n--- Step {step['id']}: SKIP (destructive; pass --allow-destructive to run)")
-                    results.append(make_skipped(step, "destructive — skipped (use --allow-destructive)"))
-                    continue
-
-                if step.get("needs_cli") and not step.get("needs_browser"):
-                    print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")
-                    r = run_cli_only_step(client, model, step, project_root, out_dir)
-                    print(f"  -> {r.status}  (1 turn, {r.duration_s:.1f}s)")
-                    if r.notes:
-                        print(f"     notes: {r.notes[:200]}")
-                    if r.bugs:
-                        print(f"     bugs : {len(r.bugs)} reported")
-                    results.append(r)
-                    continue
-
-                # Browser path — lazy-launch Chromium on first browser step.
-                if browser is None:
-                    browser = p.chromium.launch(headless=not args.headed)
-                    context = browser.new_context(viewport={"width": 1280, "height": 800})
-                    page = context.new_page()
-
-                inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
-                print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
-                cleanup_page_state(page)
-                r = run_step(client, model, page, step, out_dir, args.max_iterations, inj)
-                print(f"  -> {r.status}  ({r.iterations} iters, {r.duration_s:.1f}s)")
-                if r.notes:
-                    print(f"     notes: {r.notes[:200]}")
-                if r.bugs:
-                    print(f"     bugs : {len(r.bugs)} reported")
-                results.append(r)
-        finally:
-            if browser is not None:
-                browser.close()
+    fatal_error: str | None = None
+    try:
+        with sync_playwright() as p:
+            browser = None
+            page: Page | None = None
+            try:
+                for step in raw_steps:
+                    r = _execute_step(
+                        p, browser, page, step, args, client, model, project_root, out_dir,
+                    )
+                    # _execute_step may have lazy-launched the browser — pick up the handles.
+                    browser, page = r.browser, r.page
+                    step_result = r.step_result
+                    print(_format_step_log(step_result))
+                    results.append(step_result)
+            finally:
+                if browser is not None:
+                    try:
+                        browser.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+    except Exception:  # noqa: BLE001 — top-level crash; surface in report.json instead of dying silently
+        fatal_error = traceback.format_exc()
+        print(f"\n[FATAL] runner top-level crash captured into report.json:\n{fatal_error}", file=sys.stderr)
 
     summary = {"total": len(results), "pass": 0, "fail": 0, "error": 0, "skipped": 0}
     for r in results:
         summary[r.status] = summary.get(r.status, 0) + 1
 
-    report = {
+    report: dict[str, Any] = {
         "started_at": ts,
         "model": model,
         "base_url": base_url,
@@ -909,10 +942,87 @@ def main() -> int:
         "summary": summary,
         "steps": [asdict(r) for r in results],
     }
+    if fatal_error:
+        report["fatal_error"] = fatal_error
     (out_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(f"\nReport    : {out_dir / 'report.json'}")
     print(f"Summary   : {summary}")
+    if fatal_error:
+        print("Status    : runner crashed mid-run — partial results in report.json (fatal_error field set)")
+        return 2
     return 0 if (summary["fail"] == 0 and summary["error"] == 0) else 1
+
+
+@dataclass
+class _ExecutedStep:
+    step_result: StepResult
+    browser: Any
+    page: Page | None
+
+
+def _execute_step(
+    p: Any,
+    browser: Any,
+    page: Page | None,
+    step: dict[str, Any],
+    args: argparse.Namespace,
+    client: OpenAI,
+    model: str,
+    project_root: Path,
+    out_dir: Path,
+) -> _ExecutedStep:
+    """Run one step with full crash containment. Any unhandled exception becomes a
+    StepResult(status='error', error=traceback) so the for-loop never aborts and
+    report.json always sees this step."""
+    try:
+        if step.get("destructive") and not args.allow_destructive:
+            print(f"\n--- Step {step['id']}: SKIP (destructive; pass --allow-destructive to run)")
+            return _ExecutedStep(
+                make_skipped(step, "destructive — skipped (use --allow-destructive)"),
+                browser, page,
+            )
+
+        if step.get("needs_cli") and not step.get("needs_browser"):
+            print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")
+            r = run_cli_only_step(client, model, step, project_root, out_dir)
+            return _ExecutedStep(r, browser, page)
+
+        # Browser path — lazy-launch Chromium on first browser step.
+        if browser is None:
+            browser = p.chromium.launch(headless=not args.headed)
+            context = browser.new_context(viewport={"width": 1280, "height": 800})
+            page = context.new_page()
+
+        inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
+        print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
+        cleanup_page_state(page)
+        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj)
+        return _ExecutedStep(r, browser, page)
+    except Exception as exc:  # noqa: BLE001
+        evidence = out_dir / f"step-{step['id']}"
+        evidence.mkdir(parents=True, exist_ok=True)
+        tb = traceback.format_exc()
+        (evidence / "crash.txt").write_text(tb)
+        crashed = StepResult(
+            id=step["id"],
+            section=step.get("section", ""),
+            action=step["action"],
+            status="error",
+            iterations=0,
+            notes=f"runner crash: {type(exc).__name__}: {exc}"[:300],
+            error=tb,
+            evidence_dir=str(evidence.relative_to(out_dir)),
+        )
+        return _ExecutedStep(crashed, browser, page)
+
+
+def _format_step_log(r: StepResult) -> str:
+    line = f"  -> {r.status}  ({r.iterations} iters, {r.duration_s:.1f}s)"
+    if r.notes:
+        line += f"\n     notes: {r.notes[:200]}"
+    if r.bugs:
+        line += f"\n     bugs : {len(r.bugs)} reported"
+    return line
 
 
 if __name__ == "__main__":

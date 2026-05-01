@@ -83,7 +83,7 @@ Same input format as `/run-checklist` and (almost) same output, but execution ha
 | Browser automation cost | Claude tokens (screenshots dominate) | Free (local inference) |
 | Required setup | Playwright MCP plugin | Local model + Chromium + `.env.local` |
 | Credentials | HITL with secrets pulled from `credentials_file` | **Not yet supported** — protected pages will fail |
-| CLI step support | Yes (curl, docker, gh, npm, …) | **Not yet** — CLI-only steps are skipped |
+| CLI step support | Yes (curl, docker, gh, npm, …) | Yes for pure-CLI steps (subprocess + single-turn LM verdict). Mixed browser+CLI steps still run as browser-only — the auto-execution of bundled CLI commands inside a browser step is a Phase 5 item. |
 | Shape support | Table / Prose / Nested / CLI | Same, parsed by the same `parse_checklist.py` |
 | Recovery from tool errors | Yes (Claude reasons over failures) | Yes (the local model retries; loop guarded by `--max-iterations`) |
 | HITL clarification mid-run | Yes | No — the runner is autonomous, end-of-run only |

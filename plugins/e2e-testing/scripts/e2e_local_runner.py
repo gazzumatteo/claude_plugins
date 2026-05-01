@@ -541,6 +541,200 @@ def run_step(
     )
 
 
+CLI_COMMAND_TIMEOUT_S = 120
+CLI_OUTPUT_LIMIT = 4000
+CLI_STDERR_LIMIT = 2000
+
+
+def run_cli_commands(commands: list[str], cwd: Path, timeout: int = CLI_COMMAND_TIMEOUT_S) -> list[dict[str, Any]]:
+    """Run shell commands sequentially in `cwd`. Stops on first non-zero exit so the model
+    evaluates a clean failure point instead of a cascade of unrelated errors."""
+    results: list[dict[str, Any]] = []
+    for cmd in commands:
+        started = dt.datetime.now()
+        try:
+            proc = subprocess.run(
+                cmd, shell=True, cwd=str(cwd),
+                capture_output=True, text=True,
+                timeout=timeout, errors="replace",
+            )
+            stdout, stderr = proc.stdout or "", proc.stderr or ""
+            results.append({
+                "cmd": cmd,
+                "exit_code": proc.returncode,
+                "stdout": stdout[:CLI_OUTPUT_LIMIT],
+                "stdout_truncated": len(stdout) > CLI_OUTPUT_LIMIT,
+                "stderr": stderr[:CLI_STDERR_LIMIT],
+                "stderr_truncated": len(stderr) > CLI_STDERR_LIMIT,
+                "duration_s": (dt.datetime.now() - started).total_seconds(),
+            })
+            if proc.returncode != 0:
+                break
+        except subprocess.TimeoutExpired as exc:
+            partial = exc.stdout if isinstance(exc.stdout, str) else ""
+            results.append({
+                "cmd": cmd, "exit_code": -1,
+                "stdout": (partial or "")[:CLI_OUTPUT_LIMIT],
+                "stdout_truncated": len(partial or "") > CLI_OUTPUT_LIMIT,
+                "stderr": f"timeout after {timeout}s",
+                "stderr_truncated": False,
+                "duration_s": float(timeout),
+            })
+            break
+        except Exception as exc:  # noqa: BLE001
+            results.append({
+                "cmd": cmd, "exit_code": -2,
+                "stdout": "", "stdout_truncated": False,
+                "stderr": f"{type(exc).__name__}: {exc}",
+                "stderr_truncated": False,
+                "duration_s": (dt.datetime.now() - started).total_seconds(),
+            })
+            break
+    return results
+
+
+def format_cli_transcript(results: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for r in results:
+        block = f"$ {r['cmd']}\n[exit {r['exit_code']}, {r['duration_s']:.2f}s]"
+        if r["stdout"]:
+            tag = " (truncated)" if r["stdout_truncated"] else ""
+            block += f"\nSTDOUT{tag}:\n{r['stdout']}"
+        if r["stderr"]:
+            tag = " (truncated)" if r["stderr_truncated"] else ""
+            block += f"\nSTDERR{tag}:\n{r['stderr']}"
+        blocks.append(block)
+    return "\n\n".join(blocks)
+
+
+def run_cli_only_step(
+    client: OpenAI,
+    model: str,
+    step: dict[str, Any],
+    project_root: Path,
+    out_dir: Path,
+) -> StepResult:
+    """Execute a pure-CLI step: run cli_commands as subprocesses, then ask the model
+    in a single turn whether the transcript matches the expected outcome.
+
+    No vision, no browser. The only tool exposed is finish_step (tool_choice='required')."""
+    evidence = out_dir / f"step-{step['id']}"
+    evidence.mkdir(parents=True, exist_ok=True)
+    started = dt.datetime.now()
+
+    commands = step.get("cli_commands") or []
+    if not commands:
+        duration = (dt.datetime.now() - started).total_seconds()
+        return StepResult(
+            id=step["id"], section=step.get("section", ""), action=step["action"],
+            status="error", iterations=0,
+            notes="CLI step has no commands extracted by the parser",
+            evidence_dir=str(evidence.relative_to(out_dir)), duration_s=duration,
+        )
+
+    cli_results = run_cli_commands(commands, project_root)
+    (evidence / "cli_results.json").write_text(json.dumps(cli_results, indent=2))
+    transcript = format_cli_transcript(cli_results)
+    (evidence / "transcript.txt").write_text(transcript)
+
+    expected = (step.get("expected") or "").strip()
+    expected_block = (
+        f"Expected outcome: {expected}\n"
+        if expected
+        else "Expected outcome: not stated explicitly. Treat as pass when all commands exit 0 and "
+             "the output is consistent with the stated action.\n"
+    )
+    section_line = f"Section: {step['section']}\n" if step.get("section") else ""
+
+    finish_tool = next(t for t in TOOL_SCHEMAS if t["function"]["name"] == "finish_step")
+    system = (
+        "You assess the transcript of CLI commands run for an end-to-end test step. "
+        "Reply ONLY by calling finish_step. No browser is involved.\n"
+        "  - Pass when the commands ran successfully AND their output matches the expected outcome.\n"
+        "  - Fail when an exit code is non-zero, the output reveals an error, or the expected outcome "
+        "is contradicted by the observed output.\n"
+        "  - Report bugs for genuine product defects (wrong values, broken integrations); do NOT report "
+        "bugs about the test itself or about transient infra issues."
+    )
+    user = (
+        f"{section_line}"
+        f"Step {step['id']}: {step['action']}\n"
+        f"{expected_block}\n"
+        f"Command transcript ({len(cli_results)} of {len(commands)} commands run; "
+        f"chain stops on first non-zero exit):\n\n{transcript}\n\n"
+        "Decide pass/fail and call finish_step with notes (and bugs if any)."
+    )
+
+    final_status = "error"
+    final_notes = ""
+    final_bugs: list[dict[str, Any]] = []
+    error: str | None = None
+
+    try:
+        rsp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            tools=[finish_tool],
+            tool_choice="auto",
+            temperature=0.0,
+            max_tokens=600,
+        )
+    except Exception as exc:  # noqa: BLE001
+        error = f"chat.completions failed: {exc}"
+    else:
+        msg = rsp.choices[0].message
+        tool_calls = msg.tool_calls or []
+        # Persist the raw response for diagnostics — useful when tool_choice negotiation differs by server.
+        (evidence / "model_response.json").write_text(json.dumps({
+            "content": msg.content,
+            "tool_calls": [
+                {"name": tc.function.name, "arguments": tc.function.arguments}
+                for tc in tool_calls
+            ],
+        }, indent=2))
+        if tool_calls:
+            tc = tool_calls[0]
+            if tc.function.name == "finish_step":
+                try:
+                    args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                except json.JSONDecodeError:
+                    args = {}
+                final_status = args.get("status", "fail") or "fail"
+                final_notes = (args.get("notes") or "").strip()
+                final_bugs = args.get("bugs") or []
+            else:
+                error = f"unexpected tool: {tc.function.name}"
+        else:
+            # Fallback: some servers/models emit prose instead of a function call. Try to
+            # extract a verdict from the text — pass if it explicitly says "pass" / matches
+            # expected, fail otherwise.
+            content = (msg.content or "").strip()
+            if content:
+                verdict = "pass" if "pass" in content.lower()[:200] and "fail" not in content.lower()[:200] else "fail"
+                final_status = verdict
+                final_notes = content[:600]
+            else:
+                error = "no tool call and empty content"
+                final_notes = ""
+
+    duration = (dt.datetime.now() - started).total_seconds()
+    return StepResult(
+        id=step["id"],
+        section=step.get("section", ""),
+        action=step["action"],
+        status=("error" if error else final_status),
+        iterations=1,
+        notes=final_notes or (error or ""),
+        bugs=final_bugs,
+        evidence_dir=str(evidence.relative_to(out_dir)),
+        duration_s=duration,
+        error=error,
+    )
+
+
 def cleanup_page_state(page: Page) -> None:
     """Best-effort cleanup between steps: dismiss overlays/modals/dropdowns."""
     try:
@@ -660,9 +854,8 @@ def main() -> int:
 
     results: list[StepResult] = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not args.headed)
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
-        page = context.new_page()
+        browser = None
+        page: Page | None = None
         try:
             for step in raw_steps:
                 # Routing decisions
@@ -670,10 +863,23 @@ def main() -> int:
                     print(f"\n--- Step {step['id']}: SKIP (destructive; pass --allow-destructive to run)")
                     results.append(make_skipped(step, "destructive — skipped (use --allow-destructive)"))
                     continue
+
                 if step.get("needs_cli") and not step.get("needs_browser"):
-                    print(f"\n--- Step {step['id']}: SKIP (CLI-only; runner has no CLI executor yet)")
-                    results.append(make_skipped(step, "CLI-only step — not implemented in this runner"))
+                    print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")
+                    r = run_cli_only_step(client, model, step, project_root, out_dir)
+                    print(f"  -> {r.status}  (1 turn, {r.duration_s:.1f}s)")
+                    if r.notes:
+                        print(f"     notes: {r.notes[:200]}")
+                    if r.bugs:
+                        print(f"     bugs : {len(r.bugs)} reported")
+                    results.append(r)
                     continue
+
+                # Browser path — lazy-launch Chromium on first browser step.
+                if browser is None:
+                    browser = p.chromium.launch(headless=not args.headed)
+                    context = browser.new_context(viewport={"width": 1280, "height": 800})
+                    page = context.new_page()
 
                 inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
                 print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
@@ -686,7 +892,8 @@ def main() -> int:
                     print(f"     bugs : {len(r.bugs)} reported")
                 results.append(r)
         finally:
-            browser.close()
+            if browser is not None:
+                browser.close()
 
     summary = {"total": len(results), "pass": 0, "fail": 0, "error": 0, "skipped": 0}
     for r in results:

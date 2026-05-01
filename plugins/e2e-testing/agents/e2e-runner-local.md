@@ -124,7 +124,7 @@ Stop with `RUN_FAILED unparseable checklist (shape=<x>, step_count=<n>)` if `sha
 
 From the summary:
 - If `destructive_count > 0` and the user did not pass `--allow-destructive`, warn: "N destructive step(s) will be SKIPPED. Re-run with `--allow-destructive` to include them."
-- If `needs_cli_count > 0` and `needs_browser_count == 0` for those steps, warn: "M CLI-only step(s) will be SKIPPED — the local runner does not yet implement a CLI executor."
+- If `needs_cli_count > 0`, note: "M step(s) include CLI commands. Pure-CLI steps run via subprocess + single-turn LM verdict; mixed browser+CLI steps execute as browser-only (the bundled CLI commands are NOT auto-run inside a browser step yet)."
 - If `credentials_ref` is set, note it: the local runner currently does NOT read credentials. Tell the user the run will proceed without auth and may fail on protected pages.
 
 If `--dry-run`, emit the summary as a short prose block and stop with `RUN_DRY <parsed-json-path>`.

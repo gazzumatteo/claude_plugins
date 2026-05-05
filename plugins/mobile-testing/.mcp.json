@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "mobile-testing": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "python",
+        "-m",
+        "mobile_mcp.server"
+      ],
+      "env": {
+        "MOBILE_BACKEND": "native",
+        "APPIUM_URL": "http://localhost:4723",
+        "APPIUM_AUTO_START": "1"
+      }
+    }
+  }
+}

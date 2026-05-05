@@ -7,7 +7,7 @@ Drop-in replacement for the [MobAI MCP](https://github.com/MobAI-App/mobai-mcp):
 ## Quick start
 
 > [!IMPORTANT]  
-> `claude plugin install` copies the plugin files but does **NOT** install Python dependencies or register the MCP server. You **must** run `/setup-mobile` after install. Without it, the MCP tools (`list_devices`, etc.) won't appear.
+> `claude plugin install` copies the plugin files and auto-registers the `mobile-testing` MCP server (via the bundled `.mcp.json`). You still need `/setup-mobile` afterwards to install Python dependencies (`uv sync`) — without them the server starts and immediately crashes. Restart Claude Code once after both steps.
 
 ```bash
 # 1. Add marketplace
@@ -30,9 +30,10 @@ execute_dsl   # with DSL JSON
 | Step | What | Mandatory? |
 |---|---|---|
 | `uv sync` | Installs `mcp`, `httpx`, `pyobjc-framework-Quartz` (~30 packages) | **Yes** — without this the MCP server crashes on start |
-| Register MCP | Adds `mobile-testing` entry to `~/.claude/mcp.json` | **Yes** — without this the tools don't show up in Claude |
 | Install Appium | `npm install -g appium` + XCUITest/UIAutomator2 drivers | No — only needed for Appium backend |
 | Create Android AVD | `avdmanager create` with Android 35 + Pixel 9 | No — only for Android emulator testing |
+
+> MCP registration is handled by the bundled `.mcp.json` at install time. No manual edit of `~/.claude.json` is needed.
 
 ## Architecture
 
@@ -59,7 +60,9 @@ mobile-testing (Python)
 
 ## Configuration
 
-### MCP config (`~/.claude/mcp.json`)
+### MCP config (bundled — auto-registered)
+
+The plugin ships a `.mcp.json` in its root that Claude Code reads at install time. You don't need to edit any user-level config.
 
 ```json
 {
@@ -77,7 +80,7 @@ mobile-testing (Python)
 }
 ```
 
-> `${CLAUDE_PLUGIN_ROOT}` is auto-resolved by Claude Code to the plugin install directory. Use `/setup-mobile` to register this config automatically.
+> `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code to the plugin install directory.
 
 ### Environment variables
 

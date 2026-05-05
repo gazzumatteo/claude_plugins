@@ -96,30 +96,16 @@ sdkmanager "system-images;android-35;google_apis_playstore;arm64-v8a"  # adjust 
 avdmanager create avd -n "Pixel_9_API_35" -k "system-images;android-35;google_apis_playstore;arm64-v8a" -d "pixel_9"
 ```
 
-### 5. Register MCP config
+### 5. MCP registration (automatic — nothing to do)
 
-Check if already registered:
+The plugin ships a `.mcp.json` in its root, so the `mobile-testing` MCP server is registered by Claude Code automatically when the plugin is installed. **Do NOT** edit `~/.claude.json` or `~/.claude/mcp.json` by hand.
+
+Verify the user already has the plugin installed and enabled:
 ```bash
-python3 -c "import json; cfg=json.load(open('${HOME}/.claude/mcp.json')); print('mobile-testing' in cfg.get('mcpServers',{}))" 2>/dev/null || echo "not registered"
+ls "${HOME}/.claude/plugins/cache/gazzumatteo-claude-plugins/mobile-testing/" 2>/dev/null
 ```
 
-If not already registered, add to `${HOME}/.claude/mcp.json` under `mcpServers.mobile-testing`:
-
-```json
-{
-  "command": "uv",
-  "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "mobile_mcp.server"],
-  "env": {
-    "MOBILE_BACKEND": "native",
-    "APPIUM_URL": "http://localhost:4723",
-    "APPIUM_AUTO_START": "1"
-  }
-}
-```
-
-> `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code at runtime to the absolute path of the installed plugin directory (where `pyproject.toml` lives).
-
-Preserve existing entries in the file with `Read` first, then `Write` the full updated JSON.
+If the plugin cache exists but the MCP tools don't appear in `/mcp`, instruct the user to restart Claude Code — fresh sessions pick up `.mcp.json` from installed plugins on startup.
 
 ### 6. Output summary
 
@@ -129,7 +115,7 @@ SETUP_COMPLETE
   - Python deps: installed
   - Appium: v3.x (drivers: xcuitest, uiautomator2)
   - Android AVD: Pixel_9_API_35 (or: skipped)
-  - MCP config: registered in ~/.claude/mcp.json
+  - MCP server: registered automatically via plugin .mcp.json
   - Backend: native (default), appium available
   - Next: restart Claude Code, then use list_devices + start_bridge
 ```
@@ -137,6 +123,6 @@ SETUP_COMPLETE
 ## Never do
 
 - Never install packages globally with pip (use uv only)
-- Never overwrite existing MCP config entries without preserving them
+- Never edit `~/.claude.json` or `~/.claude/mcp.json` by hand — the plugin's `.mcp.json` handles registration
 - Never create Android AVDs without asking the user
 - Never install Appium globally without asking the user

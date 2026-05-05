@@ -2,6 +2,12 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.5.5] — 2026-05-05
+
+### Fixed (mobile-testing v0.1.3)
+- **MCP server now auto-registers on plugin install.** Previous releases relied on `/setup-mobile` to write into `~/.claude/mcp.json`, but Claude Code reads MCP servers from `~/.claude.json`, not from `~/.claude/mcp.json` — so the tools never appeared in `/mcp`. The plugin now ships a `.mcp.json` in its root, which Claude Code picks up automatically when the plugin is installed/enabled. After install + `/setup-mobile` (for `uv sync`), restart Claude Code once and `mcp__mobile-testing__list_devices` etc. become available.
+- `/setup-mobile` no longer touches `~/.claude.json` / `~/.claude/mcp.json`. README and agent updated to remove the manual MCP-registration step.
+
 ## [0.5.4] — 2026-05-05
 
 ### Changed (mobile-testing v0.1.2)

@@ -8,6 +8,10 @@ __pycache__/
 .env.*.local
 .e2e-testing.env
 
+# Python virtual env
+.venv/
+__pycache__/
+
 # runner outputs
 .e2e-runs/
 plugins/e2e-testing/scripts/**/runs/

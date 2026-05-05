@@ -1,0 +1,26 @@
+[project]
+name = "dap-mobile-mcp"
+version = "0.1.1"
+description = "MCP server for direct iOS Simulator and Android Emulator control. Pluggable backends: native (xcrun simctl + adb) and Appium. Drop-in replacement for MobAI MCP."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0",
+    "httpx>=0.27",
+    "pyobjc-framework-Quartz>=11; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+appium = ["Appium-Python-Client>=5.0"]
+
+[project.scripts]
+dap-mobile-mcp = "dap_mobile_mcp.server:main"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dap_mobile_mcp"]

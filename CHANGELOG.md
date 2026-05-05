@@ -2,6 +2,31 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.5.3] — 2026-05-05
+
+### Fixed (mobile-testing v0.1.1) — pre-flight code review
+- **Native router** — `MOBILE_BACKEND=native` previously fell back to iOS-only and Android devices never appeared in `list_devices`. Introduced `NativeBackendRouter` that aggregates iOS + Android devices and dispatches every per-device call to the right sub-backend by platform (cached after first lookup).
+- **Backend lifecycle** — every MCP tool call used to instantiate a fresh backend and `await backend.shutdown()` in `finally`. For Appium that destroyed the WebDriver session immediately after `start_bridge`, breaking every subsequent `tap`/`swipe` with `RuntimeError: No Appium session`. Backend is now a module-level singleton with an `atexit` shutdown hook.
+- **Android screencap** — `_adb` ran with `text=True`, mangling PNG bytes via UTF-8 decoding before they were re-encoded with `latin1`. Added a binary-safe `_adb_bytes` and switched `get_screenshot` / `save_screenshot` to it.
+- **iOS swipe osascript fallback** — referenced `step_delay` which only existed in the Quartz code path, so `pyobjc` missing meant `UnboundLocalError` instead of a graceful fallback. Refactored into `_quartz_swipe` (returns `True`/`False`) and a clean osascript fallback.
+- **iOS tap scaling** — taps used `(window_origin + device_pixels)` ignoring the Simulator's window↔device scale factor, so on retina simulators every tap landed at the wrong spot. Now reads device pixel dimensions from `xcrun simctl io ... enumerate --json` and applies `scale = window_size / device_size` per axis.
+- **iOS stop_bridge** — used to call `simctl shutdown` unconditionally, killing simulators the user had opened manually. Now tracks `_booted_by_us` and only shuts down what `start_bridge` actually booted.
+- **Android start_bridge** — used to claim `already_running` for any `emulator-*` id without verifying. Now checks `adb devices`; if the id matches an AVD name (`emulator -list-avds`), spawns the emulator and waits up to 120s for it to come online; otherwise raises a clear error. `stop_bridge` only kills emulators it started.
+- **Stub MCP tools removed** — `test_get_active`, `test_list_projects`, `test_run` were registered as `@mcp.tool()` but only returned `{"status":"stub"}`. Removed from the surface.
+- **Real assertions on Appium** — `assert_exists` / `assert_not_exists` / `assert_count` now run a real `find_element` query through Appium and produce `status: "ok"` or `status: "failed"` with the matched count. On native backend they record `status: "skipped"` with a clear note instead of silently passing.
+- **`pyobjc-framework-Quartz`** moved to `; sys_platform == 'darwin'` so Linux installs no longer fail at `uv sync`.
+- **DSL parser** — extended `bounds_hint` to accept `"x,y wxh"` (legacy MobAI) in addition to `"x+y+w+h"`; `double_tap` and `long_press` now accept a `predicate` fallback like `tap`; `assert_screen_changed` returns `skipped` instead of fake `ok`. Directional swipe heuristics use device-pixel coords (configurable via `center_x` / `center_y`) so backend scaling stays consistent.
+- **Cleanups** — duplicate `uiautomator dump` call in Android `observe`, dead `_adb_json`, redundant iOS runtime-string parser, broken `../LICENSE` link in plugin README.
+
+## [0.5.2] — 2026-05-04
+
+### Added (mobile-testing)
+- **`mobile-testing` plugin** — direct iOS Simulator and Android Emulator control via MCP, no MobAI desktop app, no rate limits. Pluggable backends: native (xcrun simctl + adb + Quartz/osascript) and Appium (XCUITest + UIAutomator2, auto-started on-demand). Drop-in replacement for MobAI MCP: same 14 tool names (`list_devices`, `execute_dsl`, `get_screenshot`, `install_app`, ...), same DSL v0.2 format.
+- Two slash commands: `/setup-mobile` (bootstrap Appium + Python deps + Android AVD + MCP config) and `/mobile-doctor` (health check).
+- iOS touch via Quartz CGEvent + Simulator window position detection (no Appium needed for basic tap/swipe/type).
+- Android fully supported via adb: tap, swipe, type, keyevent, uiautomator dump for UI tree.
+- `MOBILE_BACKEND` env var switches backends at runtime (`native` or `appium`).
+
 ## [0.5.1] — 2026-05-01
 
 ### Fixed (e2e-testing)

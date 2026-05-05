@@ -12,7 +12,7 @@ tools:
 
 # Mobile Setup Agent
 
-You bootstrap the dap-mobile-mcp server. Two modes:
+You bootstrap the mobile-testing MCP server. Two modes:
 
 1. **Setup mode** — Install dependencies, configure AVD, register MCP
 2. **Doctor mode** — Run health checks only
@@ -103,12 +103,12 @@ Check if already registered:
 python3 -c "import json; cfg=json.load(open('${HOME}/.claude/mcp.json')); print('mobile-testing' in cfg.get('mcpServers',{}))" 2>/dev/null || echo "not registered"
 ```
 
-If not already registered, add to `${HOME}/.claude/mcp.json` under `mcpServers.dap-mobile-mcp`:
+If not already registered, add to `${HOME}/.claude/mcp.json` under `mcpServers.mobile-testing`:
 
 ```json
 {
   "command": "uv",
-  "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "dap_mobile_mcp.server"],
+  "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "mobile_mcp.server"],
   "env": {
     "MOBILE_BACKEND": "native",
     "APPIUM_URL": "http://localhost:4723",

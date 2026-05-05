@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 
-from dap_mobile_mcp.backends.base import BackendBase
+from mobile_mcp.backends.base import BackendBase
 
 
 def _resolve_predicate_coords(predicate: dict | None) -> tuple[int | None, int | None]:

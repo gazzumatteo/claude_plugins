@@ -3,9 +3,9 @@
 import base64
 from typing import Any
 
-from dap_mobile_mcp.backends.base import BackendBase, Device
-from dap_mobile_mcp.backends.native.android import NativeAndroidBackend
-from dap_mobile_mcp.backends.native.ios import NativeIOSBackend
+from mobile_mcp.backends.base import BackendBase, Device
+from mobile_mcp.backends.native.android import NativeAndroidBackend
+from mobile_mcp.backends.native.ios import NativeIOSBackend
 
 
 class NativeBackendRouter(BackendBase):
@@ -122,7 +122,7 @@ class NativeBackendRouter(BackendBase):
         return await backend.observe(device_id, include=include)
 
     async def execute_dsl(self, device_id: str, steps: list[dict]) -> dict:
-        from dap_mobile_mcp.dsl.parser import execute_dsl_steps
+        from mobile_mcp.dsl.parser import execute_dsl_steps
         return await execute_dsl_steps(self, device_id, steps)
 
     async def shutdown(self) -> None:

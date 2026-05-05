@@ -30,7 +30,7 @@ execute_dsl   # with DSL JSON
 | Step | What | Mandatory? |
 |---|---|---|
 | `uv sync` | Installs `mcp`, `httpx`, `pyobjc-framework-Quartz` (~30 packages) | **Yes** — without this the MCP server crashes on start |
-| Register MCP | Adds `dap-mobile-mcp` entry to `~/.claude/mcp.json` | **Yes** — without this the tools don't show up in Claude |
+| Register MCP | Adds `mobile-testing` entry to `~/.claude/mcp.json` | **Yes** — without this the tools don't show up in Claude |
 | Install Appium | `npm install -g appium` + XCUITest/UIAutomator2 drivers | No — only needed for Appium backend |
 | Create Android AVD | `avdmanager create` with Android 35 + Pixel 9 | No — only for Android emulator testing |
 
@@ -39,7 +39,7 @@ execute_dsl   # with DSL JSON
 ```
 Claude Code
   ↓ stdio (MCP)
-dap-mobile-mcp (Python)
+mobile-testing (Python)
   ├── NativeBackend  (default) — xcrun simctl + adb + Quartz/osascript
   └── AppiumBackend (opt-in)   — Appium 3.x + XCUITest/UIAutomator2
        ↓ auto-starts Appium on first use
@@ -64,9 +64,9 @@ dap-mobile-mcp (Python)
 ```json
 {
   "mcpServers": {
-    "dap-mobile-mcp": {
+    "mobile-testing": {
       "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "dap_mobile_mcp.server"],
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "mobile_mcp.server"],
       "env": {
         "MOBILE_BACKEND": "native",
         "APPIUM_URL": "http://localhost:4723",

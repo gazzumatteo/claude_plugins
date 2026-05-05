@@ -8,10 +8,10 @@ import time
 
 from mcp.server.fastmcp import FastMCP
 
-from dap_mobile_mcp.backends.base import BackendBase
-from dap_mobile_mcp.backends.native.router import NativeBackendRouter
+from mobile_mcp.backends.base import BackendBase
+from mobile_mcp.backends.native.router import NativeBackendRouter
 
-mcp = FastMCP("dap-mobile-mcp")
+mcp = FastMCP("mobile-testing")
 
 _BACKEND: BackendBase | None = None
 
@@ -23,7 +23,7 @@ def _get_backend() -> BackendBase:
 
     backend_name = os.environ.get("MOBILE_BACKEND", "native")
     if backend_name == "appium":
-        from dap_mobile_mcp.backends.appium.backend import AppiumBackend
+        from mobile_mcp.backends.appium.backend import AppiumBackend
         auto_start = os.environ.get("APPIUM_AUTO_START", "1") == "1"
         appium_url = os.environ.get("APPIUM_URL", "http://localhost:4723")
         _BACKEND = AppiumBackend(appium_url=appium_url, auto_start=auto_start)

@@ -2,6 +2,12 @@
 
 All notable changes to this marketplace are documented here.
 
+## [0.5.4] — 2026-05-05
+
+### Changed (mobile-testing v0.1.2)
+- **Renamed internal package and MCP server** to drop the `dap-` project-internal prefix. Python package `dap_mobile_mcp` → `mobile_mcp`; pyproject distribution `dap-mobile-mcp` → `mobile-mcp`; MCP server name `dap-mobile-mcp` → `mobile-testing` (matches the plugin). Tools now appear as `mcp__mobile-testing__list_devices`, etc.
+- Updated all imports, README, agent setup instructions, doctor.sh banner, and SKILL.md accordingly.
+
 ## [0.5.3] — 2026-05-05
 
 ### Fixed (mobile-testing v0.1.1) — pre-flight code review

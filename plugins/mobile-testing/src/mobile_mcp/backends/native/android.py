@@ -7,7 +7,7 @@ import tempfile
 import time
 from typing import Any
 
-from dap_mobile_mcp.backends.base import BackendBase, Device
+from mobile_mcp.backends.base import BackendBase, Device
 
 
 def _adb(*args: str, timeout: int = 30, device_id: str | None = None) -> tuple[int, str, str]:
@@ -312,5 +312,5 @@ class NativeAndroidBackend(BackendBase):
         return result
 
     async def execute_dsl(self, device_id: str, steps: list[dict]) -> dict:
-        from dap_mobile_mcp.dsl.parser import execute_dsl_steps
+        from mobile_mcp.dsl.parser import execute_dsl_steps
         return await execute_dsl_steps(self, device_id, steps)

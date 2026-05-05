@@ -6,7 +6,7 @@ import tempfile
 import time
 from typing import Any
 
-from dap_mobile_mcp.backends.base import BackendBase, Device
+from mobile_mcp.backends.base import BackendBase, Device
 
 
 class AppiumBackend(BackendBase):
@@ -69,13 +69,13 @@ class AppiumBackend(BackendBase):
     async def list_devices(self) -> list[Device]:
         devices: list[Device] = []
         try:
-            from dap_mobile_mcp.backends.native.ios import NativeIOSBackend
+            from mobile_mcp.backends.native.ios import NativeIOSBackend
             ios_devs = await NativeIOSBackend().list_devices()
             devices.extend(ios_devs)
         except Exception:
             pass
         try:
-            from dap_mobile_mcp.backends.native.android import NativeAndroidBackend
+            from mobile_mcp.backends.native.android import NativeAndroidBackend
             android_devs = await NativeAndroidBackend().list_devices()
             devices.extend(android_devs)
         except Exception:
@@ -216,7 +216,7 @@ class AppiumBackend(BackendBase):
         return result
 
     async def execute_dsl(self, device_id: str, steps: list[dict]) -> dict:
-        from dap_mobile_mcp.dsl.parser import execute_dsl_steps
+        from mobile_mcp.dsl.parser import execute_dsl_steps
         return await execute_dsl_steps(self, device_id, steps)
 
     def find_elements_by_predicate(self, device_id: str, predicate: dict) -> list:

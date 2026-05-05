@@ -3,9 +3,9 @@ name: mobile-testing
 description: Direct mobile device control via MCP tools — tap, swipe, type, screenshot, observe, install apps, and more on iOS Simulator and Android Emulator. Supports native backend (xcrun simctl + adb) and Appium backend. Zero rate limits. Drop-in replacement for MobAI MCP. Load when the user asks to interact with mobile devices (iOS Simulator, Android Emulator, tap, swipe, screenshot, install app, test on device).
 ---
 
-# Mobile Testing MCP (dap-mobile-mcp)
+# Mobile Testing MCP
 
-You have access to **dap-mobile-mcp** MCP tools for controlling iOS Simulator and Android Emulator directly — no MobAI desktop app, no rate limits.
+You have access to the **mobile-testing** MCP server for controlling iOS Simulator and Android Emulator directly — no MobAI desktop app, no rate limits. Tools appear with the `mcp__mobile-testing__` prefix (e.g. `mcp__mobile-testing__list_devices`).
 
 ## Backends
 

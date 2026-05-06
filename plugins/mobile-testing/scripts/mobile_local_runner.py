@@ -15,9 +15,11 @@ Verify config without running anything:
 Configuration cascade (lower lines override higher lines, except process env):
     1. Process env (LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, LMSTUDIO_API_KEY)
     2. Per-project:  <project_root>/.mobile-testing.env
-    3. User-global:  $XDG_CONFIG_HOME/claude-mobile-testing/config.env
+    3. Per-project:  <project_root>/.e2e-testing.env  ← fallback, LMSTUDIO_* keys only
+                     (lets you reuse the e2e-testing plugin's project config)
+    4. User-global:  $XDG_CONFIG_HOME/claude-mobile-testing/config.env
                      (default: ~/.config/claude-mobile-testing/config.env)
-    4. Plugin-dev:   <plugin>/scripts/.env.local  (only when working in-tree)
+    5. Plugin-dev:   <plugin>/scripts/.env.local  (only when working in-tree)
 
 Checklist format (prose, easiest):
     # Title
@@ -45,7 +47,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from openai import OpenAI
 
 from mobile_mcp.backends.base import BackendBase
@@ -86,18 +88,34 @@ def _parse_dotenv_keys(path: Path) -> list[str]:
 
 
 def load_env_cascade(project_root: Path) -> list[tuple[str, Path, list[str]]]:
+    """Walk lowest-precedence to highest, layering env files. Process env always wins.
+
+    `.e2e-testing.env` is read selectively (only LMSTUDIO_* keys propagate) so the
+    user can share LM Studio config across plugins without leaking e2e-specific
+    vars (PLAYWRIGHT_*, etc.) into mobile-testing's environment.
+    """
     process_env_snapshot = {k: os.environ[k] for k in PROTECTED_KEYS if k in os.environ}
     sources: list[tuple[str, Path, list[str]]] = []
-    candidates: list[tuple[str, Path]] = [
-        ("plugin-dev", Path(__file__).parent / ".env.local"),
-        ("user-global", _user_config_path()),
-        ("project-local", project_root / ".mobile-testing.env"),
+    # (level, path, protected_keys_only)
+    candidates: list[tuple[str, Path, bool]] = [
+        ("plugin-dev",          Path(__file__).parent / ".env.local",        False),
+        ("user-global",         _user_config_path(),                         False),
+        ("project-shared(e2e)", project_root / ".e2e-testing.env",           True),
+        ("project-local",       project_root / ".mobile-testing.env",        False),
     ]
-    for level, path in candidates:
-        if path.exists():
-            relevant = [k for k in _parse_dotenv_keys(path) if k in PROTECTED_KEYS]
+    for level, path, protected_only in candidates:
+        if not path.exists():
+            continue
+        relevant = [k for k in _parse_dotenv_keys(path) if k in PROTECTED_KEYS]
+        if protected_only:
+            values = dotenv_values(path)
+            for k in PROTECTED_KEYS:
+                v = values.get(k)
+                if v is not None:
+                    os.environ[k] = v
+        else:
             load_dotenv(path, override=True)
-            sources.append((level, path, relevant))
+        sources.append((level, path, relevant))
     for k, v in process_env_snapshot.items():
         os.environ[k] = v
     if process_env_snapshot:

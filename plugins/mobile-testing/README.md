@@ -152,8 +152,9 @@ Configuration cascade (lowest precedence first; process env always wins):
 
 1. `<plugin>/scripts/.env.local` (in-tree dev)
 2. `~/.config/claude-mobile-testing/config.env` (user-global)
-3. `<project>/.mobile-testing.env` (per-project)
-4. Process env (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`)
+3. `<project>/.e2e-testing.env` — **fallback, `LMSTUDIO_*` keys only**, so you can reuse the e2e-testing plugin's project file without leaking other vars
+4. `<project>/.mobile-testing.env` (per-project, overrides the e2e fallback)
+5. Process env (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`)
 
 Defaults: `LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1`, `LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni`.
 

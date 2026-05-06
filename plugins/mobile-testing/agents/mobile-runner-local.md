@@ -22,7 +22,7 @@ PLUGIN_ROOT: /path/to/plugin
 PROJECT_ROOT: /path/to/project_under_test
 ```
 
-`PROJECT_ROOT` is the user's working directory — the runner reads `<project>/.mobile-testing.env` from there and writes screenshots into `<project>/.mobile-test-screenshots/` unless `MOBILE_SCREENSHOT_DIR` is already set.
+`PROJECT_ROOT` is the user's working directory — the runner reads `<project>/.mobile-testing.env` (and falls back to `<project>/.e2e-testing.env` for `LMSTUDIO_*` keys when the mobile file is absent or doesn't define them) and writes screenshots into `<project>/.mobile-test-screenshots/` unless `MOBILE_SCREENSHOT_DIR` is already set.
 
 ## What you do (and only this)
 

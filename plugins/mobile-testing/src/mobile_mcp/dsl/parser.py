@@ -8,6 +8,23 @@ from mobile_mcp.backends.base import BackendBase
 _ERROR_MAX_CHARS = 200
 
 
+def _ms_arg(step: dict, *keys: str, default: int) -> int:
+    """Read a duration in ms tolerating multiple spellings (`ms`, `duration_ms`, `timeout_ms`).
+
+    Some callers and older MobAI-shaped DSL scripts pass `ms`; the canonical
+    field is `duration_ms` (or `timeout_ms` for waits). Accept any provided key
+    so a typo doesn't silently fall back to the default and skew timing.
+    """
+    for k in keys:
+        v = step.get(k)
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                continue
+    return default
+
+
 def _short_error(e: Exception) -> str:
     """Compact a Python/WebDriver exception into a single short line.
 
@@ -58,7 +75,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
 
     try:
         if action == "delay":
-            ms = int(step.get("duration_ms", 500))
+            ms = _ms_arg(step, "duration_ms", "ms", "delay_ms", default=500)
             await asyncio.sleep(ms / 1000)
             result["result"] = {"status": "delayed", "duration_ms": ms}
             result["status"] = "ok"
@@ -109,7 +126,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
         elif action == "long_press":
             x = step.get("x")
             y = step.get("y")
-            duration_ms = step.get("duration_ms", 500)
+            duration_ms = _ms_arg(step, "duration_ms", "ms", default=500)
             predicate = step.get("predicate")
             if (x is None or y is None) and predicate:
                 x, y = _resolve_predicate_coords(predicate)
@@ -154,7 +171,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
                     device_id,
                     int(step["from_x"]), int(step["from_y"]),
                     int(step["to_x"]), int(step["to_y"]),
-                    duration_ms=step.get("duration_ms", 300),
+                    duration_ms=_ms_arg(step, "duration_ms", "ms", default=300),
                 )
             else:
                 raise ValueError(f"Unknown swipe direction: {direction}")
@@ -166,7 +183,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
             from_y = step.get("from_y", 400)
             to_x = step.get("to_x", 100)
             to_y = step.get("to_y", 100)
-            duration = step.get("duration_ms", 500)
+            duration = _ms_arg(step, "duration_ms", "ms", default=500)
             r = await backend.swipe(
                 device_id, int(from_x), int(from_y), int(to_x), int(to_y), duration_ms=duration
             )
@@ -199,7 +216,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
             result["status"] = "ok"
 
         elif action == "wait_for":
-            ms = int(step.get("timeout_ms", 10000))
+            ms = _ms_arg(step, "timeout_ms", "ms", "duration_ms", default=10000)
             await asyncio.sleep(ms / 1000)
             result["result"] = {"status": "timeout" if ms > 5000 else "waited", "waited_ms": ms}
             result["status"] = "ok"

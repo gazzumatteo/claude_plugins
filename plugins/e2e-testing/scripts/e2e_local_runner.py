@@ -58,6 +58,12 @@ DEFAULT_API_KEY = "lm-studio"
 
 PROTECTED_KEYS = ("LMSTUDIO_BASE_URL", "LMSTUDIO_MODEL", "LMSTUDIO_API_KEY")
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUTHY
+
 
 def _user_config_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
@@ -879,7 +885,9 @@ def main() -> int:
                                  "or <project_root>/.e2e-runs/ for the built-in smoke.")
     arg_parser.add_argument("--check-config", action="store_true",
                             help="Print the resolved env cascade and exit (rc=0 ok, 2 incomplete).")
-    arg_parser.add_argument("--headed", action="store_true")
+    arg_parser.add_argument("--headed", action="store_true",
+                            help="Show the browser window. Also enabled by E2E_HEADED=1 in "
+                                 ".e2e-testing.env or the shell environment.")
     arg_parser.add_argument("--max-iterations", type=int, default=8)
     arg_parser.add_argument("--inject-error", default=None,
                             help="Tool name whose first invocation fails on step 2 (one-shot)")
@@ -897,6 +905,10 @@ def main() -> int:
 
     project_root = Path(args.project_root).expanduser().resolve() if args.project_root else Path.cwd().resolve()
     sources = load_env_cascade(project_root)
+    # Fold E2E_HEADED (from .e2e-testing.env or process env) into args.headed so the
+    # downstream launch site (single source of truth) doesn't have to know about both.
+    if not args.headed and _env_truthy("E2E_HEADED"):
+        args.headed = True
 
     if args.check_config:
         return cmd_check_config(project_root, sources)

@@ -22,6 +22,15 @@ All produce or consume the same markdown format, parsed by `scripts/parse_checkl
 
 Default when unset: `cloud`. Acceptable values: `cloud` | `local`. Drop `E2E_EXECUTOR=local` in `.e2e-testing.env` to make every run on that project local; teammates without LM Studio fall back to cloud automatically.
 
+### Showing the browser (local executor)
+
+The local executor launches Chromium **headless by default** — useful for CI but unhelpful when you're debugging. Two ways to make it visible:
+
+- **Per-run flag**: pass `--headed` to `/run-checklist` (or directly to `e2e_local_runner.py`).
+- **Per-project**: set `E2E_HEADED=1` in `<project>/.e2e-testing.env` (or `export E2E_HEADED=1` in your shell). The runner ORs this with `--headed`, so either path triggers a headed window.
+
+The cloud executor (`/run-checklist` with `E2E_EXECUTOR=cloud`) goes through the Playwright MCP, which already shows the browser by default — these env knobs only affect the local path.
+
 ## `/create-checklist`
 
 ```

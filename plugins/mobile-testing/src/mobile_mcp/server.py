@@ -184,6 +184,53 @@ async def uninstall_app(device_id: str, bundle_id: str) -> str:
 
 
 @mcp.tool()
+async def analyze_screenshot(device_id: str, prompt: str, save_path: str = "") -> str:
+    """Capture a screenshot of the device and ask the local LM Studio model about it.
+
+    Returns the model's text answer (~30-200 tokens). Use this instead of
+    save_screenshot + Read(png) to validate UI state without paying Anthropic
+    vision tokens — typical cost: ~1800 tok per Read(png) → ~50 tok per
+    analyze_screenshot.
+
+    Requires LMSTUDIO_BASE_URL / LMSTUDIO_MODEL / LMSTUDIO_API_KEY in the
+    environment (defaults http://127.0.0.1:1234/v1, nvidia/nemotron-3-nano-omni,
+    lm-studio). Raises a tool error if the endpoint is unreachable.
+
+    Args:
+        device_id: Device ID
+        prompt: What to ask the model (e.g. "Is the login button visible? If yes, give x,y center coords.")
+        save_path: Optional — also save the captured PNG to this path for evidence
+    """
+    from mobile_mcp.vision import analyze_with_lmstudio
+    backend = _get_backend()
+    img = await backend.get_screenshot(device_id, low_quality=True)
+    if save_path:
+        path = os.path.expanduser(save_path)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(img)
+    answer = await asyncio.to_thread(analyze_with_lmstudio, img, prompt)
+    return answer
+
+
+@mcp.tool()
+async def analyze_image(path: str, prompt: str) -> str:
+    """Ask the local LM Studio model about an image already on disk.
+
+    Companion to `analyze_screenshot` for cases where the PNG/JPG was saved by
+    something else (e.g. Playwright `browser_take_screenshot(filename=...)`,
+    or a previous `save_screenshot`). Returns the model's text answer.
+
+    Args:
+        path: Absolute or ~-relative path to the image file (PNG/JPG)
+        prompt: What to ask the model
+    """
+    from mobile_mcp.vision import analyze_with_lmstudio
+    answer = await asyncio.to_thread(analyze_with_lmstudio, path, prompt)
+    return answer
+
+
+@mcp.tool()
 async def execute_dsl(device_id: str, commands: str) -> str:
     """Execute device automation steps using a JSON DSL script.
 

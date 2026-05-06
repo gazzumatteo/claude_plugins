@@ -124,6 +124,28 @@ echo ".mobile-test-screenshots/" >> .gitignore
 
 The `mobile-runner-local` agent does this automatically when invoked with `--checklist`.
 
+### Vision-as-a-service (`analyze_screenshot`, `analyze_image`)
+
+Two MCP tools let the orchestrating Claude session offload PNG analysis to LM Studio. Claude asks "is the login button visible? give x,y" and gets back a short text answer (~30-200 tokens) instead of paying ~1800 vision tokens to ingest the PNG itself.
+
+| Tool | When to use |
+|---|---|
+| `analyze_screenshot(device_id, prompt, save_path?)` | Capture a fresh screenshot from the device and ask about it in one round-trip. |
+| `analyze_image(path, prompt)` | Ask about an existing PNG on disk (e.g. one saved by a previous `save_screenshot` or by Playwright). |
+
+Both read endpoint config from the same env vars as the local runner (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`). Defaults: `http://127.0.0.1:1234/v1`, `nvidia/nemotron-3-nano-omni`, `lm-studio`. Set them in your shell, `.envrc`, or `.mobile-testing.env`.
+
+Errors (endpoint unreachable, empty reply) surface as MCP tool errors with the failing URL/model — no silent degradation.
+
+**Cost comparison on a 20-step checklist with one validation per step:**
+
+| Pattern | Vision tokens |
+|---|---|
+| `save_screenshot` + `Read(png)` per step | ~36k |
+| `analyze_screenshot(prompt)` per step | ~1.5k |
+
+The pattern is opt-in: Claude can still `Read` a PNG when the prompt response is ambiguous and pixel-level inspection is unavoidable.
+
 ### Local executor (LM Studio, zero Claude tokens for device automation)
 
 The plugin ships a local runner that drives the simulator/emulator under control of an OpenAI-compatible local model (LM Studio). It bypasses Claude tokens entirely for the inner tool-use loop — the same pattern used by `e2e-testing`'s local runner.

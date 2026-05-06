@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "e2e-vision": {
+      "command": "uv",
+      "args": [
+        "run",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/e2e_vision_server.py"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -22,6 +22,41 @@ All produce or consume the same markdown format, parsed by `scripts/parse_checkl
 
 Default when unset: `cloud`. Acceptable values: `cloud` | `local`. Drop `E2E_EXECUTOR=local` in `.e2e-testing.env` to make every run on that project local; teammates without LM Studio fall back to cloud automatically.
 
+### Vision-as-a-service (`analyze_image` MCP tool)
+
+The plugin ships a small auxiliary MCP server `e2e-vision` (auto-registered via `.mcp.json`) that exposes one tool:
+
+```
+analyze_image(path, prompt) → str
+```
+
+It loads the PNG/JPG from disk, sends it to LM Studio with the given prompt, and returns the model's text reply (~30-200 tokens). Designed to be paired with Playwright MCP's `browser_take_screenshot(filename=...)`:
+
+```
+1. mcp__plugin_playwright_playwright__browser_take_screenshot(filename="/tmp/x.png")
+2. mcp__plugin_e2e-testing_e2e-vision__analyze_image(
+       path="/tmp/x.png",
+       prompt="Is the homepage hero visible? If yes, describe the headline in one sentence.")
+   → "Yes, the headline reads 'Playwright enables reliable web automation.'"
+```
+
+Cost comparison for a 20-step run with one validation per step:
+
+| Pattern | Vision tokens |
+|---|---|
+| `browser_take_screenshot()` (inline base64) per step | ~36k |
+| `browser_take_screenshot(filename=…)` + `analyze_image(prompt)` | ~1.5k |
+
+Endpoint config (process env, set in shell or `.envrc`/dotenv loader):
+
+```
+LMSTUDIO_BASE_URL  default http://127.0.0.1:1234/v1
+LMSTUDIO_MODEL     default nvidia/nemotron-3-nano-omni
+LMSTUDIO_API_KEY   default lm-studio
+```
+
+The pattern is opt-in: when the LM Studio reply is ambiguous, Claude can still `Read` the PNG directly. Unreachable-endpoint failures surface as a clear MCP tool error, never a silent fallback.
+
 ### Showing the browser (local executor)
 
 The local executor launches Chromium **headless by default** — useful for CI but unhelpful when you're debugging. Two ways to make it visible:

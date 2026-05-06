@@ -183,13 +183,11 @@ class NativeAndroidBackend(BackendBase):
         return data
 
     async def save_screenshot(self, device_id: str, path: str = "", name: str | None = None) -> str:
-        if not path:
-            path = tempfile.gettempdir()
-        path = os.path.expanduser(path)
-        os.makedirs(path, exist_ok=True)
+        from mobile_mcp.backends.base import resolve_screenshot_dir
+        out_dir = resolve_screenshot_dir(path)
         ts = int(time.time())
         fname = name if name else f"screenshot_{device_id[:8]}_{ts}"
-        fpath = os.path.join(path, f"{fname}.png")
+        fpath = os.path.join(out_dir, f"{fname}.png")
         code, data, err = _adb_bytes("exec-out", "screencap", "-p", device_id=device_id, timeout=15)
         if code != 0:
             raise RuntimeError(f"Screenshot failed: {err.decode('utf-8', errors='replace')}")
@@ -266,23 +264,16 @@ class NativeAndroidBackend(BackendBase):
         }
 
     async def press_key(self, device_id: str, key: str) -> dict:
-        key_map: dict[str, str] = {
-            "home": "KEYCODE_HOME",
-            "back": "KEYCODE_BACK",
-            "enter": "KEYCODE_ENTER",
-            "tab": "KEYCODE_TAB",
-            "delete": "KEYCODE_DEL",
-            "volume_up": "KEYCODE_VOLUME_UP",
-            "volume_down": "KEYCODE_VOLUME_DOWN",
-            "power": "KEYCODE_POWER",
-            "recent_apps": "KEYCODE_APP_SWITCH",
-            "mute": "KEYCODE_VOLUME_MUTE",
-            "media_play_pause": "KEYCODE_MEDIA_PLAY_PAUSE",
-            "escape": "KEYCODE_ESCAPE",
-        }
-        keycode = key_map.get(key.lower(), key.upper())
+        from mobile_mcp.backends.base import ANDROID_KEY_MAP
+        keycode = ANDROID_KEY_MAP.get(key.lower(), key.upper())
         _adb("shell", "input", "keyevent", keycode, device_id=device_id, timeout=10)
         return {"status": "key_pressed", "key": key}
+
+    async def hide_keyboard(self, device_id: str) -> dict:
+        # On Android the BACK key dismisses the IME without affecting nav stack
+        # when no keyboard is open (no-op).
+        _adb("shell", "input", "keyevent", "KEYCODE_BACK", device_id=device_id, timeout=10)
+        return {"status": "keyboard_hidden"}
 
     async def observe(self, device_id: str, include: list[str] | None = None) -> dict:
         if include is None:

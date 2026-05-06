@@ -7,6 +7,7 @@ __pycache__/
 .env.local
 .env.*.local
 .e2e-testing.env
+.mobile-testing.env
 
 # Python virtual env
 .venv/
@@ -16,6 +17,13 @@ __pycache__/
 .e2e-runs/
 plugins/e2e-testing/scripts/**/runs/
 plugins/e2e-testing/scripts/**/.cache/
+plugins/mobile-testing/scripts/**/runs/
 
 # Playwright MCP scratch dir
 .playwright-mcp/
+
+# Local mobile-testing screenshot scratch in projects under test
+.mobile-test-screenshots/
+
+# Claude Code planning scratch (per CLAUDE.md tasks/todo.md convention)
+tasks/

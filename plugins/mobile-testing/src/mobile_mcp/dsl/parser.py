@@ -1,7 +1,25 @@
 import asyncio
+import time
 from typing import Any
 
 from mobile_mcp.backends.base import BackendBase
+
+
+_ERROR_MAX_CHARS = 200
+
+
+def _short_error(e: Exception) -> str:
+    """Compact a Python/WebDriver exception into a single short line.
+
+    Returns `<ClassName>: <first non-empty line up to 200 chars>`. Full traces
+    stay in the MCP server's stderr only — they would otherwise add ~5k chars
+    per failed step to the tool response.
+    """
+    msg = getattr(e, "msg", None) or str(e) or ""
+    first = next((ln.strip() for ln in msg.splitlines() if ln.strip()), "")
+    if len(first) > _ERROR_MAX_CHARS:
+        first = first[: _ERROR_MAX_CHARS - 1] + "…"
+    return f"{e.__class__.__name__}: {first}" if first else e.__class__.__name__
 
 
 def _resolve_predicate_coords(predicate: dict | None) -> tuple[int | None, int | None]:
@@ -34,13 +52,15 @@ def _resolve_predicate_coords(predicate: dict | None) -> tuple[int | None, int |
 async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dict[str, Any]:
     action = step.get("action", "")
     context = step.get("context", "native")
-    result: dict[str, Any] = {"action": action, "request": step}
+    # Result keeps `action` (so the caller can correlate without re-sending the
+    # request body) but drops `request` to keep responses small.
+    result: dict[str, Any] = {"action": action}
 
     try:
         if action == "delay":
-            ms = step.get("duration_ms", 500)
+            ms = int(step.get("duration_ms", 500))
             await asyncio.sleep(ms / 1000)
-            result["result"] = {"status": "delayed", "delayed_ms": ms}
+            result["result"] = {"status": "delayed", "duration_ms": ms}
             result["status"] = "ok"
 
         elif action == "open_app":
@@ -159,23 +179,29 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
             result["result"] = r
             result["status"] = "ok"
 
+        elif action == "hide_keyboard":
+            r = await backend.hide_keyboard(device_id)
+            result["result"] = r
+            result["status"] = "ok"
+
         elif action == "screenshot":
-            r = await backend.get_screenshot(device_id)
-            import base64
-            result["result"] = {"screenshot": base64.b64encode(r).decode("utf-8")}
+            # Save to disk and return path only — inline base64 was ~68k tokens
+            # per step. Callers that genuinely need pixels can Read the file.
+            name = step.get("name")
+            path = await backend.save_screenshot(device_id, name=name)
+            result["result"] = {"path": path}
             result["status"] = "ok"
 
         elif action == "observe":
             inc = step.get("include", ["ui_tree"])
-            only_visible = step.get("only_visible", True)
             r = await backend.observe(device_id, include=inc)
             result["result"] = r
             result["status"] = "ok"
 
         elif action == "wait_for":
-            ms = step.get("timeout_ms", 10000)
+            ms = int(step.get("timeout_ms", 10000))
             await asyncio.sleep(ms / 1000)
-            result["result"] = {"status": "timeout" if ms > 5000 else "waited"}
+            result["result"] = {"status": "timeout" if ms > 5000 else "waited", "waited_ms": ms}
             result["status"] = "ok"
 
         elif action == "assert_exists":
@@ -268,7 +294,7 @@ async def _execute_step(backend: BackendBase, device_id: str, step: dict) -> dic
 
     except Exception as e:
         result["status"] = "error"
-        result["error"] = str(e)
+        result["error"] = _short_error(e)
 
     return result
 
@@ -277,6 +303,7 @@ async def execute_dsl_steps(backend: BackendBase, device_id: str, steps: list[di
     step_results = []
     has_error = False
     has_failed = False
+    started = time.time()
     for i, step in enumerate(steps):
         res = await _execute_step(backend, device_id, step)
         step_results.append(res)
@@ -298,5 +325,6 @@ async def execute_dsl_steps(backend: BackendBase, device_id: str, steps: list[di
     return {
         "status": overall,
         "step_count": len(step_results),
+        "elapsed_ms": int((time.time() - started) * 1000),
         "step_results": step_results,
     }

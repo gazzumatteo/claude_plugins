@@ -139,13 +139,11 @@ class AppiumBackend(BackendBase):
         return driver.get_screenshot_as_png()
 
     async def save_screenshot(self, device_id: str, path: str = "", name: str | None = None) -> str:
-        if not path:
-            path = tempfile.gettempdir()
-        path = os.path.expanduser(path)
-        os.makedirs(path, exist_ok=True)
+        from mobile_mcp.backends.base import resolve_screenshot_dir
+        out_dir = resolve_screenshot_dir(path)
         ts = int(time.time())
         fname = name if name else f"screenshot_{device_id[:8]}_{ts}"
-        fpath = os.path.join(path, f"{fname}.png")
+        fpath = os.path.join(out_dir, f"{fname}.png")
         driver = self._get_driver(device_id)
         driver.save_screenshot(fpath)
         return fpath
@@ -210,9 +208,42 @@ class AppiumBackend(BackendBase):
         }
 
     async def press_key(self, device_id: str, key: str) -> dict:
+        from mobile_mcp.backends.base import ANDROID_KEY_MAP, IOS_APPIUM_BUTTON_MAP
         driver = self._get_driver(device_id)
-        driver.press_keycode(key.upper())
+        device = await self.get_device(device_id)
+        normalized = key.lower()
+        if device.platform == "android":
+            keycode = ANDROID_KEY_MAP.get(normalized, normalized.upper())
+            # Appium expects an int keycode for press_keycode; KEYCODE_* names → numeric
+            android_numeric: dict[str, int] = {
+                "KEYCODE_HOME": 3, "KEYCODE_BACK": 4, "KEYCODE_ENTER": 66,
+                "KEYCODE_TAB": 61, "KEYCODE_DEL": 67, "KEYCODE_VOLUME_UP": 24,
+                "KEYCODE_VOLUME_DOWN": 25, "KEYCODE_POWER": 26,
+                "KEYCODE_APP_SWITCH": 187, "KEYCODE_VOLUME_MUTE": 164,
+                "KEYCODE_MEDIA_PLAY_PAUSE": 85, "KEYCODE_ESCAPE": 111,
+            }
+            num = android_numeric.get(keycode) if isinstance(keycode, str) else None
+            if num is None:
+                try:
+                    num = int(keycode)
+                except (TypeError, ValueError):
+                    raise ValueError(f"press_key: unknown Android key '{key}'") from None
+            driver.press_keycode(num)
+        else:  # iOS
+            button = IOS_APPIUM_BUTTON_MAP.get(normalized)
+            if button:
+                driver.execute_script("mobile: pressButton", {"name": button})
+            else:
+                raise ValueError(f"press_key: '{key}' not supported on iOS Appium")
         return {"status": "key_pressed", "key": key}
+
+    async def hide_keyboard(self, device_id: str) -> dict:
+        driver = self._get_driver(device_id)
+        try:
+            driver.hide_keyboard()
+        except Exception:
+            pass  # iOS sometimes raises when keyboard already hidden
+        return {"status": "keyboard_hidden"}
 
     async def observe(self, device_id: str, include: list[str] | None = None) -> dict:
         if include is None:

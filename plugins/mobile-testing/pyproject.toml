@@ -1,6 +1,6 @@
 [project]
 name = "mobile-mcp"
-version = "0.1.3"
+version = "0.1.4"
 description = "MCP server for direct iOS Simulator and Android Emulator control. Pluggable backends: native (xcrun simctl + adb) and Appium. Drop-in replacement for MobAI MCP."
 requires-python = ">=3.11"
 dependencies = [
@@ -11,6 +11,10 @@ dependencies = [
 
 [project.optional-dependencies]
 appium = ["Appium-Python-Client>=5.0"]
+local = [
+    "openai>=1.50.0",
+    "python-dotenv>=1.0.0",
+]
 
 [project.scripts]
 mobile-mcp = "mobile_mcp.server:main"

@@ -189,9 +189,12 @@ async def execute_dsl(device_id: str, commands: str) -> str:
 
     The DSL must have `"version": "0.2"` and a `"steps"` array of actions.
     Supported actions: open_app, kill_app, tap, double_tap, long_press, type,
-    swipe, scroll, drag, press_key, navigate, delay, wait_for, screenshot,
-    observe, assert_exists, assert_not_exists, assert_screen_changed,
+    swipe, scroll, drag, press_key, hide_keyboard, navigate, delay, wait_for,
+    screenshot, observe, assert_exists, assert_not_exists, assert_screen_changed,
     assert_count, set_location, toggle.
+
+    The `screenshot` action saves the PNG to disk (honoring `MOBILE_SCREENSHOT_DIR`)
+    and returns `{"path": ...}` — it does not embed base64 to keep responses small.
 
     Args:
         device_id: Device ID

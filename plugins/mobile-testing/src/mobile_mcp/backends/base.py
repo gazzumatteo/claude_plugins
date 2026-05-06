@@ -1,6 +1,48 @@
+import os
+import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def resolve_screenshot_dir(path: str = "") -> str:
+    """Pick the screenshot output dir: explicit `path` > `MOBILE_SCREENSHOT_DIR` > tempdir.
+
+    Callers (e.g. a test runner driving a project under test) export
+    `MOBILE_SCREENSHOT_DIR=$PWD/.mobile-test-screenshots` and add that path to
+    `.gitignore` so artifacts stay out of version control.
+    """
+    if path:
+        resolved = os.path.expanduser(path)
+    else:
+        env = os.environ.get("MOBILE_SCREENSHOT_DIR", "").strip()
+        resolved = os.path.expanduser(env) if env else tempfile.gettempdir()
+    os.makedirs(resolved, exist_ok=True)
+    return resolved
+
+
+ANDROID_KEY_MAP: dict[str, str] = {
+    "home": "KEYCODE_HOME",
+    "back": "KEYCODE_BACK",
+    "enter": "KEYCODE_ENTER",
+    "tab": "KEYCODE_TAB",
+    "delete": "KEYCODE_DEL",
+    "volume_up": "KEYCODE_VOLUME_UP",
+    "volume_down": "KEYCODE_VOLUME_DOWN",
+    "power": "KEYCODE_POWER",
+    "recent_apps": "KEYCODE_APP_SWITCH",
+    "mute": "KEYCODE_VOLUME_MUTE",
+    "media_play_pause": "KEYCODE_MEDIA_PLAY_PAUSE",
+    "escape": "KEYCODE_ESCAPE",
+    "hide_keyboard": "111",  # KEYCODE_ESCAPE numeric — closes the soft keyboard
+}
+
+# iOS Appium maps keys to mobile: pressButton names
+IOS_APPIUM_BUTTON_MAP: dict[str, str] = {
+    "home": "home",
+    "volume_up": "volumeup",
+    "volume_down": "volumedown",
+}
 
 
 @dataclass
@@ -88,6 +130,10 @@ class BackendBase(ABC):
 
     @abstractmethod
     async def execute_dsl(self, device_id: str, steps: list[dict]) -> dict: ...
+
+    async def hide_keyboard(self, device_id: str) -> dict:
+        """Default: send the soft-keyboard-dismiss keycode. Backends may override."""
+        return await self.press_key(device_id, "hide_keyboard")
 
     async def shutdown(self) -> None:
         pass

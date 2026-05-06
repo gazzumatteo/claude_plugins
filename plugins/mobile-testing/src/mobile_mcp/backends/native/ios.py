@@ -266,13 +266,11 @@ class NativeIOSBackend(BackendBase):
                 pass
 
     async def save_screenshot(self, device_id: str, path: str = "", name: str | None = None) -> str:
-        if not path:
-            path = tempfile.gettempdir()
-        path = os.path.expanduser(path)
-        os.makedirs(path, exist_ok=True)
+        from mobile_mcp.backends.base import resolve_screenshot_dir
+        out_dir = resolve_screenshot_dir(path)
         ts = int(time.time())
         fname = name if name else f"screenshot_{device_id[:8]}_{ts}"
-        fpath = os.path.join(path, f"{fname}.png")
+        fpath = os.path.join(out_dir, f"{fname}.png")
         _xcrun("simctl", "io", device_id, "screenshot", "--type", "png", fpath, timeout=15)
         return fpath
 
@@ -365,6 +363,7 @@ class NativeIOSBackend(BackendBase):
             "tab": 48,
             "delete": 51,
             "escape": 53,
+            "hide_keyboard": 53,  # ESC dismisses the iOS Simulator soft keyboard
             "volume_up": 73,
             "volume_down": 74,
         }
@@ -373,6 +372,10 @@ class NativeIOSBackend(BackendBase):
         else:
             _simulator_key_press(key)
         return {"status": "key_pressed", "key": key}
+
+    async def hide_keyboard(self, device_id: str) -> dict:
+        _simulator_key_code(53)  # ESC
+        return {"status": "keyboard_hidden"}
 
     async def observe(self, device_id: str, include: list[str] | None = None) -> dict:
         if include is None:

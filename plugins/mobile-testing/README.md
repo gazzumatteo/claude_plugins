@@ -107,6 +107,69 @@ uv sync --extra appium --directory "${HOME}/.claude/plugins/cache/gazzumatteo-cl
 
 Without `--extra appium`, calling `start_bridge` with `MOBILE_BACKEND=appium` fails with `No module named 'appium'`.
 
+### Screenshot directory (`MOBILE_SCREENSHOT_DIR`)
+
+`save_screenshot` and the DSL `screenshot` action write PNGs to:
+
+1. The explicit `path` argument (when provided), else
+2. `$MOBILE_SCREENSHOT_DIR` (when set), else
+3. The OS tempdir (`tempfile.gettempdir()`).
+
+For project-local runs, export the env var to a gitignored folder inside the project under test:
+
+```bash
+export MOBILE_SCREENSHOT_DIR="$PWD/.mobile-test-screenshots"
+echo ".mobile-test-screenshots/" >> .gitignore
+```
+
+The `mobile-runner-local` agent does this automatically when invoked with `--checklist`.
+
+### Local executor (LM Studio, zero Claude tokens for device automation)
+
+The plugin ships a local runner that drives the simulator/emulator under control of an OpenAI-compatible local model (LM Studio). It bypasses Claude tokens entirely for the inner tool-use loop — the same pattern used by `e2e-testing`'s local runner.
+
+```bash
+# Install the optional dependency once
+uv sync --extra local --directory "${CLAUDE_PLUGIN_ROOT}"
+
+# Verify config + endpoint reachability
+uv run --directory "${CLAUDE_PLUGIN_ROOT}" \
+    python scripts/mobile_local_runner.py --check-config
+
+# Run a checklist
+uv run --directory "${CLAUDE_PLUGIN_ROOT}" \
+    python scripts/mobile_local_runner.py \
+    --checklist path/to/checklist.md --device-id <udid>
+```
+
+Or via the slash command (orchestrates the agent):
+
+```
+/mobile-runner-local --checklist path/to/checklist.md --device-id <udid>
+```
+
+Configuration cascade (lowest precedence first; process env always wins):
+
+1. `<plugin>/scripts/.env.local` (in-tree dev)
+2. `~/.config/claude-mobile-testing/config.env` (user-global)
+3. `<project>/.mobile-testing.env` (per-project)
+4. Process env (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`)
+
+Defaults: `LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1`, `LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni`.
+
+Checklist format (markdown, prose):
+
+```markdown
+# Login flow
+
+## Scenario 1: happy path
+- Tap the email field and type "user@example.com" (expected: caret in field)
+- Tap the password field and type "secret" (expected: dots appear)
+- Tap "Login" (expected: home screen visible)
+```
+
+The runner writes evidence into `scripts/runs/<timestamp>/` (or `--out-dir`): per-step `trace.jsonl`, screenshots, and a top-level `report.json` it updates after every step (so a crash can never lose evidence).
+
 ## DSL reference
 
 The `execute_dsl` tool accepts a JSON DSL with `version` and `steps`:
@@ -161,6 +224,7 @@ The `execute_dsl` tool accepts a JSON DSL with `version` and `steps`:
 |---|---|
 | `/setup-mobile` | Bootstrap: install Appium, Python deps, create AVD, register MCP config |
 | `/mobile-doctor` | Health check: verify all prerequisites and connections |
+| `/mobile-runner-local` | Run a markdown checklist via LM Studio (zero Claude tokens for device automation) |
 
 ## Requirements
 

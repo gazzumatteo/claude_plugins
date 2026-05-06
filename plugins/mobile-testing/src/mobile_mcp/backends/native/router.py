@@ -117,6 +117,10 @@ class NativeBackendRouter(BackendBase):
         backend = await self._backend_for(device_id)
         return await backend.press_key(device_id, key)
 
+    async def hide_keyboard(self, device_id: str) -> dict:
+        backend = await self._backend_for(device_id)
+        return await backend.hide_keyboard(device_id)
+
     async def observe(self, device_id: str, include: list[str] | None = None) -> dict:
         backend = await self._backend_for(device_id)
         return await backend.observe(device_id, include=include)

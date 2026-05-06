@@ -47,13 +47,15 @@ Cost comparison for a 20-step run with one validation per step:
 | `browser_take_screenshot()` (inline base64) per step | ~36k |
 | `browser_take_screenshot(filename=…)` + `analyze_image(prompt)` | ~1.5k |
 
-Endpoint config (process env, set in shell or `.envrc`/dotenv loader):
+Endpoint config defaults: `LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1`, `LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni`, `LMSTUDIO_API_KEY=lm-studio`.
 
-```
-LMSTUDIO_BASE_URL  default http://127.0.0.1:1234/v1
-LMSTUDIO_MODEL     default nvidia/nemotron-3-nano-omni
-LMSTUDIO_API_KEY   default lm-studio
-```
+**Configuration cascade** (lower lines override higher lines, except process env which always wins):
+
+1. Process env (set in shell or `.envrc`)
+2. `<PWD>/.e2e-testing.env`
+3. `~/.config/claude-e2e-testing/config.env`
+
+The MCP server reloads the cascade on every tool call, so editing `.e2e-testing.env` takes effect without restarting Claude Code.
 
 The pattern is opt-in: when the LM Studio reply is ambiguous, Claude can still `Read` the PNG directly. Unreachable-endpoint failures surface as a clear MCP tool error, never a silent fallback.
 

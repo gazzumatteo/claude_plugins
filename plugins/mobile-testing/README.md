@@ -133,7 +133,16 @@ Two MCP tools let the orchestrating Claude session offload PNG analysis to LM St
 | `analyze_screenshot(device_id, prompt, save_path?)` | Capture a fresh screenshot from the device and ask about it in one round-trip. |
 | `analyze_image(path, prompt)` | Ask about an existing PNG on disk (e.g. one saved by a previous `save_screenshot` or by Playwright). |
 
-Both read endpoint config from the same env vars as the local runner (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`). Defaults: `http://127.0.0.1:1234/v1`, `nvidia/nemotron-3-nano-omni`, `lm-studio`. Set them in your shell, `.envrc`, or `.mobile-testing.env`.
+Both read endpoint config from the same env vars as the local runner (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`). Defaults: `http://127.0.0.1:1234/v1`, `nvidia/nemotron-3-nano-omni`, `lm-studio`.
+
+**Configuration cascade** (lower lines override higher lines, except process env which always wins):
+
+1. Process env (set in shell or `.envrc`)
+2. `<PWD>/.mobile-testing.env`
+3. `<PWD>/.e2e-testing.env` (fallback for projects sharing LM Studio config)
+4. `~/.config/claude-mobile-testing/config.env`
+
+The MCP server reloads the cascade on every tool call, so editing `.mobile-testing.env` takes effect without restarting Claude Code.
 
 Errors (endpoint unreachable, empty reply) surface as MCP tool errors with the failing URL/model — no silent degradation.
 

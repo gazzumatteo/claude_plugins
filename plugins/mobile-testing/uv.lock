@@ -413,21 +413,19 @@ wheels = [
 
 [[package]]
 name = "mobile-mcp"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },
     { name = "openai" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
+    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
 appium = [
     { name = "appium-python-client" },
-]
-local = [
-    { name = "python-dotenv" },
 ]
 
 [package.metadata]
@@ -437,7 +435,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.0" },
     { name = "openai", specifier = ">=1.50.0" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11" },
-    { name = "python-dotenv", marker = "extra == 'local'", specifier = ">=1.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 provides-extras = ["appium", "local"]
 

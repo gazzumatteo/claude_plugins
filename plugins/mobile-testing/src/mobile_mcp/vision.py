@@ -5,11 +5,16 @@ point is to let the orchestrating Claude session ask "what's on this screen?"
 without paying ~1.8k vision tokens to ingest the PNG itself — LM Studio reads
 the pixels, returns a short text answer, and Claude only sees the answer.
 
-Configuration is read from environment variables (the same trio used by the
-local runner):
-    LMSTUDIO_BASE_URL  default http://127.0.0.1:1234/v1
-    LMSTUDIO_MODEL     default nvidia/nemotron-3-nano-omni
-    LMSTUDIO_API_KEY   default lm-studio
+Configuration cascade (lower lines override higher lines, except process env which always wins):
+    1. Process env (LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, LMSTUDIO_API_KEY)
+    2. <PWD>/.mobile-testing.env       — per-project mobile config
+    3. <PWD>/.e2e-testing.env          — fallback for projects that share LM Studio config
+    4. ~/.config/claude-mobile-testing/config.env  — user-global
+
+PWD is read from the env (the shell sets it) with a getcwd() fallback. Note
+that the MCP server's working directory is the plugin dir (because
+.mcp.json uses `--directory ${CLAUDE_PLUGIN_ROOT}`), but PWD reflects where
+Claude Code was launched from, which is typically the user's project root.
 """
 from __future__ import annotations
 
@@ -25,6 +30,32 @@ DEFAULT_MAX_TOKENS = 512
 DEFAULT_TIMEOUT_S = 60
 
 
+def _load_env_cascade() -> None:
+    """Load LMSTUDIO_* from .{plugin}-testing.env files. Idempotent on every call.
+
+    `override=False` — values already in the process env (set by the shell that
+    launched Claude Code) always win. Re-runs every call so the user can edit
+    a dotenv file without restarting Claude Code.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    pwd_str = os.environ.get("PWD") or os.getcwd()
+    pwd = Path(pwd_str).expanduser()
+    home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or (home / ".config"))
+
+    for candidate in (
+        pwd / ".mobile-testing.env",
+        pwd / ".e2e-testing.env",
+        xdg / "claude-mobile-testing" / "config.env",
+    ):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+
 def analyze_with_lmstudio(
     image: Union[bytes, str, Path],
     prompt: str,
@@ -38,12 +69,13 @@ def analyze_with_lmstudio(
     can surface a clear tool-error to Claude (no silent fallback to "I don't
     know" — that would mask config problems).
     """
+    _load_env_cascade()  # picks up .{plugin}-testing.env from PWD on every call
     try:
         from openai import OpenAI
     except ImportError as e:
         raise RuntimeError(
             "openai package missing — run "
-            "`uv sync --extra local --directory ${CLAUDE_PLUGIN_ROOT}` to enable analyze_* tools."
+            "`uv sync --directory ${CLAUDE_PLUGIN_ROOT}` to install required deps."
         ) from e
 
     if isinstance(image, (str, Path)):

@@ -680,6 +680,8 @@ def main() -> int:
     p.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
     p.add_argument("--project-root", type=Path, default=Path.cwd())
     p.add_argument("--check-config", action="store_true")
+    p.add_argument("--parse-only", action="store_true",
+                   help="Print the parsed checklist as JSON to stdout and exit (no LM Studio call, no device interaction).")
     args = p.parse_args()
 
     sources = load_env_cascade(args.project_root)
@@ -687,8 +689,17 @@ def main() -> int:
     if args.check_config:
         return cmd_check_config(sources)
 
+    if args.parse_only:
+        if not args.checklist:
+            print("error: --parse-only requires --checklist FILE.", file=sys.stderr)
+            return 2
+        title, steps = parse_checklist(args.checklist)
+        json.dump({"title": title, "steps": steps}, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
     if not args.checklist:
-        print("error: --checklist FILE is required (or pass --check-config).", file=sys.stderr)
+        print("error: --checklist FILE is required (or pass --check-config / --parse-only).", file=sys.stderr)
         return 2
     if not args.device_id:
         print("error: --device-id is required.", file=sys.stderr)

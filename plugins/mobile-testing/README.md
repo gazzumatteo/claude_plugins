@@ -225,7 +225,25 @@ The `execute_dsl` tool accepts a JSON DSL with `version` and `steps`:
 |---|---|
 | `/setup-mobile` | Bootstrap: install Appium, Python deps, create AVD, register MCP config |
 | `/mobile-doctor` | Health check: verify all prerequisites and connections |
-| `/mobile-runner-local` | Run a markdown checklist via LM Studio (zero Claude tokens for device automation) |
+| `/mobile-runner` | **Single entry point** — auto-routes to cloud (Claude) or local (LM Studio) based on `$MOBILE_EXECUTOR` |
+| `/mobile-runner-local` | Force the local executor regardless of `MOBILE_EXECUTOR` |
+
+### Choosing the executor (cloud vs local)
+
+`/mobile-runner` picks the executor at run time from `MOBILE_EXECUTOR` (cascade, lowest precedence first):
+
+1. `<project>/.mobile-testing.env` → `MOBILE_EXECUTOR=local`
+2. `<project>/.e2e-testing.env` → `MOBILE_EXECUTOR=local` (fallback for projects that share config)
+3. Process env (`MOBILE_EXECUTOR=local` exported in shell)
+
+Default when unset: `cloud`. Acceptable values: `cloud` | `local`.
+
+| Executor | Driver | Best for |
+|---|---|---|
+| `cloud` (default) | Claude Sonnet via the plugin's MCP tools | Quick smoke runs, ambiguous UIs, when LM Studio isn't set up |
+| `local` | LM Studio + `mobile_local_runner.py` (imports backends directly) | Long suites, repeated runs, zero-token-cost requirement |
+
+The `local` path additionally needs `LMSTUDIO_BASE_URL` / `LMSTUDIO_MODEL` (defaults `http://127.0.0.1:1234/v1` / `nvidia/nemotron-3-nano-omni`) — see "Local executor" below.
 
 ## Requirements
 

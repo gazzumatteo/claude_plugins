@@ -8,10 +8,19 @@ End-to-end testing workflow for markdown checklists: **create** them from code, 
 |---|---|
 | `/create-checklist <target>` | Analyze the codebase and produce a new checklist file in one of the 4 supported shapes |
 | `/validate-checklist <path>` | Audit an existing checklist against current code + project memory, ask followups, update in place |
-| `/run-checklist <path>` | Execute every step via Playwright + CLI (Claude-driven), capture evidence, produce a structured report |
-| `/run-checklist-local <path>` | Same as above, but the browser-automation loop runs against a **local** vision-capable model (LM Studio). Zero Claude tokens for screenshots and tool calls. Falls back gracefully if the local endpoint is missing. |
+| `/run-checklist <path>` | **Single entry point.** Auto-routes to cloud (Claude+Playwright) or local (LM Studio) executor based on `$E2E_EXECUTOR`. |
+| `/run-checklist-local <path>` | Force the local executor regardless of `E2E_EXECUTOR`. |
 
-All four produce or consume the same markdown format, parsed by `scripts/parse_checklist.py`.
+All produce or consume the same markdown format, parsed by `scripts/parse_checklist.py`.
+
+### Choosing the executor (cloud vs local)
+
+`/run-checklist` picks the executor at run time from `E2E_EXECUTOR` (cascade, lowest precedence first):
+
+1. `<project>/.e2e-testing.env` → `E2E_EXECUTOR=local`
+2. Process env (`E2E_EXECUTOR=local` exported in shell)
+
+Default when unset: `cloud`. Acceptable values: `cloud` | `local`. Drop `E2E_EXECUTOR=local` in `.e2e-testing.env` to make every run on that project local; teammates without LM Studio fall back to cloud automatically.
 
 ## `/create-checklist`
 

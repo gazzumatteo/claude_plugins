@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "gazzumatteo-claude-plugins",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "description": "Claude Code plugins and skills by Matteo Gazzurelli — testing, automation, and productivity tools for NQL and beyond",
   "owner": {
     "name": "Matteo Gazzurelli",
@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "e2e-testing",
-      "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright (Claude-driven OR zero-token local executor backed by LM Studio). Structured markdown + JSON reports.",
-      "version": "0.5.1",
+      "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright. v0.5.2 unifies cloud (Claude) and local (LM Studio) executors behind a single `/run-checklist` dispatcher that auto-routes based on $E2E_EXECUTOR. Structured markdown + JSON reports.",
+      "version": "0.5.2",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"
@@ -32,8 +32,8 @@
     },
     {
       "name": "mobile-testing",
-      "description": "Direct iOS Simulator and Android Emulator control without MobAI desktop app — zero rate limits. Pluggable backends: native (xcrun simctl + adb + Quartz) and Appium (XCUITest + UIAutomator2). Drop-in replacement for MobAI MCP with same 14 tools and DSL v0.2. v0.1.5 adds slim DSL responses (~50% fewer tokens), `hide_keyboard` action, fixed Appium `press_key` keymap, project-local screenshot dir, and an optional LM-Studio-driven local runner that can also reuse `.e2e-testing.env` as a fallback for shared `LMSTUDIO_*` config.",
-      "version": "0.1.6",
+      "description": "Direct iOS Simulator and Android Emulator control without MobAI desktop app — zero rate limits. Pluggable backends: native (xcrun simctl + adb + Quartz) and Appium (XCUITest + UIAutomator2). v0.1.7 unifies cloud (Claude+MCP) and local (LM Studio) executors behind a single `/mobile-runner` dispatcher that auto-routes based on $MOBILE_EXECUTOR. Same 14 MCP tools and DSL v0.2 as MobAI MCP, plus slim DSL responses, `hide_keyboard` action, project-local screenshot dir.",
+      "version": "0.1.7",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"

@@ -90,6 +90,23 @@ The plugin ships a `.mcp.json` in its root that Claude Code reads at install tim
 | `APPIUM_URL` | `http://localhost:4723` | Appium server URL |
 | `APPIUM_AUTO_START` | `1` | Auto-start Appium when backend is appium |
 
+### Switching to the Appium backend
+
+The `Appium-Python-Client` is an **optional** dependency. To enable the Appium backend:
+
+```bash
+# 1. Install the optional dependency in the plugin venv
+uv sync --extra appium --directory "${HOME}/.claude/plugins/cache/gazzumatteo-claude-plugins/mobile-testing"
+
+# 2. Edit the env block in the plugin's .mcp.json (NOT ~/.claude/mcp.json — that
+#    file does not override the mcp__plugin_* namespace) and set:
+#    "MOBILE_BACKEND": "appium"
+
+# 3. Restart Claude Code
+```
+
+Without `--extra appium`, calling `start_bridge` with `MOBILE_BACKEND=appium` fails with `No module named 'appium'`.
+
 ## DSL reference
 
 The `execute_dsl` tool accepts a JSON DSL with `version` and `steps`:

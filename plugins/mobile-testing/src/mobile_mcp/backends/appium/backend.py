@@ -93,6 +93,7 @@ class AppiumBackend(BackendBase):
         from appium import webdriver
         from appium.options.ios import XCUITestOptions
         from appium.options.android import UiAutomator2Options
+        from selenium.common.exceptions import WebDriverException
 
         device = await self.get_device(device_id)
         if device.platform == "ios":
@@ -111,7 +112,16 @@ class AppiumBackend(BackendBase):
             if device.os_version:
                 opts.platform_version = device.os_version
 
-        driver = webdriver.Remote(f"{self._appium_url}/", options=opts)
+        try:
+            # webdriver.Remote is sync and can block 15s+ on first WDA install;
+            # offload to a thread so MCP stdio keepalive isn't starved.
+            driver = await asyncio.to_thread(
+                webdriver.Remote, self._appium_url, options=opts
+            )
+        except WebDriverException as e:
+            raise RuntimeError(
+                f"Appium session failed for {device_id}: {e.msg}"
+            ) from e
         self._sessions[device_id] = driver
         return {"status": "connected", "session_id": driver.session_id, "device_id": device_id}
 

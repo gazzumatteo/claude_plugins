@@ -56,14 +56,22 @@ If adb is missing, point to Android SDK.
 
 ### 2. Install Python dependencies (unless --skip-python)
 
+Parse `--backend` from ARGS (defaults to `native`). When the user picks `appium` or `both`, sync the optional extra so the Appium client is importable; otherwise the MCP server starts fine but `start_bridge` later fails with `No module named 'appium'`.
+
 ```bash
 cd "${CLAUDE_PLUGIN_ROOT}"
-uv sync
+if [ "$BACKEND" = "appium" ] || [ "$BACKEND" = "both" ]; then
+  uv sync --extra appium
+else
+  uv sync
+fi
 ```
 
 If uv is not installed, tell the user to run `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 ### 3. Install Appium (unless --skip-appium)
+
+Skip this step entirely when `--backend native`.
 
 Check if Appium is already installed:
 ```bash
@@ -77,11 +85,24 @@ appium driver install xcuitest
 appium driver install uiautomator2
 ```
 
-Also install Python Appium client:
+The Python Appium client is already declared in `pyproject.toml` under `[project.optional-dependencies].appium` and installed in step 2 — do NOT run `uv add` again.
+
+### 3b. Patch `.mcp.json` for Appium backend (only when --backend appium)
+
+The bundled `.mcp.json` ships with `MOBILE_BACKEND=native`. If the user picked `appium`, patch the env block in the plugin's `.mcp.json` (NOT in `~/.claude/mcp.json` — user-level config does not override the `mcp__plugin_*` namespace).
+
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}"
-uv add "Appium-Python-Client>=5.0" --optional appium
+python3 - <<'PY'
+import json, pathlib, os
+p = pathlib.Path(os.environ["CLAUDE_PLUGIN_ROOT"]) / ".mcp.json"
+data = json.loads(p.read_text())
+data["mcpServers"]["mobile-testing"]["env"]["MOBILE_BACKEND"] = "appium"
+p.write_text(json.dumps(data, indent=2) + "\n")
+print("Patched MOBILE_BACKEND=appium in", p)
+PY
 ```
+
+Tell the user to restart Claude Code afterwards so the new env is picked up.
 
 ### 4. Create Android AVD (unless --skip-android)
 

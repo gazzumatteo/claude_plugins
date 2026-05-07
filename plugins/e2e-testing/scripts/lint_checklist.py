@@ -37,11 +37,16 @@ GENERIC_CLICK_TARGETS = {
     "conferma", "confirm", "chiudi", "close", "indietro", "back", "avanti", "next",
     "submit", "invia", "ok",
 }
-CLI_HINT_RX = re.compile(
-    r"\b(curl|wget|http|GET|POST|PUT|DELETE|PATCH|docker|kubectl|psql|"
-    r"redis-cli|jq|grep|awk|find|ls\b|cat\b|tail|head|ssh|scp)\b",
+# Two split regexes:
+#   • shell binaries: case-insensitive (curl, Docker, etc. all map to a real CLI)
+#   • HTTP verbs: case-sensitive AND require trailing `/` (so "post-setup" /
+#     "Get started" prose doesn't false-positive). Real HTTP refs are always
+#     uppercase + slash: `GET /api/foo`.
+CLI_HINT_BINARY_RX = re.compile(
+    r"\b(curl|wget|docker|kubectl|psql|redis-cli|jq|grep|awk|find|ls|cat|tail|head|ssh|scp)\b",
     re.IGNORECASE,
 )
+CLI_HINT_HTTP_RX = re.compile(r"\b(GET|POST|PUT|DELETE|PATCH|HEAD)\s+/")
 ACTION_TOO_SHORT = 30  # actions shorter than this are probably under-specified
 
 
@@ -85,7 +90,8 @@ def _classify(step: dict) -> list[str]:
     # 4. Looks like a CLI/HTTP step but tagged needs_browser only.
     if (
         not step.get("needs_cli")
-        and CLI_HINT_RX.search(action) is not None
+        and (CLI_HINT_BINARY_RX.search(action) is not None
+             or CLI_HINT_HTTP_RX.search(action) is not None)
         and "click" not in action_lc
         and "click" not in (step.get("expected") or "").lower()
     ):

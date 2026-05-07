@@ -84,6 +84,18 @@ DESTRUCTIVE_KEYWORDS = re.compile(
 )
 
 FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
+
+# Inline-backtick CLI extraction: `<command>` is treated as a CLI command when the
+# backticked text begins with a known binary. Used as a fallback for table rows
+# (which can't host fenced code blocks) so steps like ``docker compose ps`` get
+# their command extracted instead of producing `cli-no-commands` at runtime.
+INLINE_BACKTICK_RE = re.compile(r"`([^`\n]{2,200})`")
+INLINE_CLI_BINARY_RE = re.compile(
+    r"^\s*(curl|wget|docker|ssh|scp|rsync|npm|node|gh|kubectl|psql|sqlite3|redis-cli|"
+    r"systemctl|service|journalctl|bash|sh|zsh|tail|head|cat|ls|find|grep|awk|sed|"
+    r"jq|chmod|chown|mkdir|rm|cp|mv|env|export|sleep|test|true|false)\b",
+    re.IGNORECASE,
+)
 TABLE_HEADER_RE = re.compile(r"^\s*\|.*\|.*\|\s*$", re.MULTILINE)
 CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX\-~])\]\s+(.+)$", re.MULTILINE)
 CHECKBOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX\-~])\]\s+(.+)$")
@@ -170,6 +182,15 @@ def classify_step(action: str, expected: str) -> tuple[bool, bool, list[str]]:
                 if ln and not ln.startswith("#"):
                     commands.append(ln)
                     needs_cli = True
+    # Fallback: extract single-backtick CLI commands when no fenced block is present.
+    # Conservative — only when the backtick content's first token is a known binary,
+    # so file paths and config values inside backticks don't get mis-extracted.
+    if not commands:
+        for m in INLINE_BACKTICK_RE.finditer(blob):
+            candidate = m.group(1).strip()
+            if INLINE_CLI_BINARY_RE.match(candidate):
+                commands.append(candidate)
+                needs_cli = True
     return needs_browser, needs_cli, commands
 
 

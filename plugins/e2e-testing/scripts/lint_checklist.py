@@ -76,7 +76,10 @@ def _classify(step: dict) -> list[str]:
         findings.append("vague-verb-no-expected")
 
     # 3. CLI step with no extracted commands — parser couldn't find a fenced block.
-    if step.get("needs_cli") and not step.get("cli_commands"):
+    # Skip when needs_browser is also true: the CLI keyword is likely in `expected`
+    # describing a server-side POST/GET that the UI triggers, not a command the
+    # test should subprocess.
+    if step.get("needs_cli") and not step.get("cli_commands") and not step.get("needs_browser"):
         findings.append("cli-no-commands")
 
     # 4. Looks like a CLI/HTTP step but tagged needs_browser only.

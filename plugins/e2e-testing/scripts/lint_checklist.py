@@ -92,7 +92,9 @@ def _classify(step: dict) -> list[str]:
         findings.append("cli-hint-but-not-tagged")
 
     # 5. Generic click target — risk of selector ambiguity.
-    if step.get("needs_browser") and "click" in action_lc:
+    # Only flag when the action is SHORT (no surrounding context to disambiguate).
+    # `click "Salva"` alone is risky; `Sul modal X click "Salva" in basso` is fine.
+    if step.get("needs_browser") and "click" in action_lc and len(action) < 80:
         m = re.search(r'click\s+["‘“]?([^"\n’”]{1,20})', action, re.I)
         if m:
             target = m.group(1).strip().strip(":,.").lower()

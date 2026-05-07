@@ -91,7 +91,15 @@ FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
 # their command extracted instead of producing `cli-no-commands` at runtime.
 INLINE_BACKTICK_RE = re.compile(r"`([^`\n]{2,800})`")
 INLINE_CLI_BINARY_RE = re.compile(
-    r"^\s*(curl|wget|docker|ssh|scp|rsync|npm|node|gh|kubectl|psql|sqlite3|redis-cli|"
+    # Match a known binary anywhere in the backtick content where it's bounded
+    # by start-of-string OR a shell separator (space, `&&`, `||`, `;`, `|`,
+    # `$(`, backtick) on the left. This catches:
+    #   curl ...                    (binary at start)
+    #   VAR=foo curl ...            (env-prefixed)
+    #   VAR=$(docker inspect) && docker exec ...   (compound)
+    #   sudo docker ...             (privilege wrapper)
+    r"(?:^|[\s;&|`(]|\bsudo\s+)"
+    r"(curl|wget|docker|ssh|scp|rsync|npm|node|gh|kubectl|psql|sqlite3|redis-cli|"
     r"systemctl|service|journalctl|bash|sh|zsh|tail|head|cat|ls|find|grep|awk|sed|"
     r"jq|chmod|chown|mkdir|rm|cp|mv|env|export|sleep|test|true|false)\b",
     re.IGNORECASE,
@@ -105,18 +113,42 @@ CHECKBOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX\-~])\]\s+(.+)$")
 # Utilities
 # ---------------------------------------------------------------------------
 
-_TABLE_PIPE_SPLIT_RE = re.compile(r"(?<!\\)\|")
-
-
 def split_table_row(line: str) -> list[str]:
-    """Split a markdown table row on `|`, respecting `\\|` escapes.
+    """Split a markdown table row on `|`, respecting `\\|` escapes AND backtick spans.
 
-    Naive `line.split("|")` truncates cells that contain escaped pipes (common in
-    bash one-liners with `curl ... | sudo bash`). We split on unescaped pipes only,
-    then unescape the surviving `\\|` back to `|` in each cell.
+    Both common escape patterns matter for our checklists:
+      • `curl ... \\| sudo bash` — backslash-escaped pipe (markdown convention)
+      • `` `cat foo | jq .` ``   — pipe inside an inline backtick span
+
+    Naive `split("|")` would truncate the cell at either pipe. We hand-roll a
+    scanner that tracks inside-backtick state and only splits on unescaped,
+    non-backticked pipes. Then we unescape `\\|` → `|` in each cell.
     """
-    parts = _TABLE_PIPE_SPLIT_RE.split(line.strip("|"))
-    return [p.strip().replace(r"\|", "|") for p in parts]
+    body = line.strip().lstrip("|")
+    # Drop the trailing `|` if present (table rows are bracketed by it).
+    if body.endswith("|"):
+        body = body[:-1]
+    cells: list[str] = []
+    buf: list[str] = []
+    in_backtick = False
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "`":
+            in_backtick = not in_backtick
+            buf.append(ch)
+        elif ch == "\\" and i + 1 < len(body) and body[i + 1] == "|":
+            # Escaped pipe — keep both chars, skip the split decision.
+            buf.append("|")  # unescape on the fly
+            i += 1
+        elif ch == "|" and not in_backtick:
+            cells.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    cells.append("".join(buf).strip())
+    return cells
 
 
 def sha256_file(path: Path) -> str:
@@ -202,7 +234,9 @@ def classify_step(action: str, expected: str) -> tuple[bool, bool, list[str]]:
     if not commands:
         for m in INLINE_BACKTICK_RE.finditer(blob):
             candidate = m.group(1).strip()
-            if INLINE_CLI_BINARY_RE.match(candidate):
+            # Use search() instead of match() so binaries after env-var prefixes
+            # or shell separators (`&&`, `||`, `|`, `;`) still register.
+            if INLINE_CLI_BINARY_RE.search(candidate):
                 commands.append(candidate)
                 needs_cli = True
     return needs_browser, needs_cli, commands

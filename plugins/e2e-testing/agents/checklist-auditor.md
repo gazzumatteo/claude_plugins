@@ -145,7 +145,7 @@ Every ambiguous item MUST include at least one concrete question and 2–4 optio
 For every prereq and config value (URLs, credential paths, docker service names):
 
 - Does the URL still resolve (`curl -I --max-time 5`)? — optional; only try if it seems internet-reachable. Skip if it's an internal staging URL.
-- Does the credentials path still exist?
+- If the checklist references credentials by role, do those role names still exist under `.testing.yml`'s `credentials:` block?
 - Does the docker service name appear in any `docker-compose*.yml`?
 
 Flag issues; suggest fixes.

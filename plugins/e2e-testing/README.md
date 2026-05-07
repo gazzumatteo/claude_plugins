@@ -15,12 +15,9 @@ All produce or consume the same markdown format, parsed by `scripts/parse_checkl
 
 ### Choosing the executor (cloud vs local)
 
-`/run-checklist` picks the executor at run time from `E2E_EXECUTOR` (cascade, lowest precedence first):
+`/run-checklist` reads `executor:` from `<project>/.testing.yml`. Process env `E2E_EXECUTOR` overrides it.
 
-1. `<project>/.e2e-testing.env` → `E2E_EXECUTOR=local`
-2. Process env (`E2E_EXECUTOR=local` exported in shell)
-
-Default when unset: `cloud`. Acceptable values: `cloud` | `local`. Drop `E2E_EXECUTOR=local` in `.e2e-testing.env` to make every run on that project local; teammates without LM Studio fall back to cloud automatically.
+Default when unset: `cloud`. Acceptable values: `cloud` | `local`. Set `executor: local` in `.testing.yml` to make every run on that project local; teammates without LM Studio can override with `E2E_EXECUTOR=cloud` in their shell.
 
 ### Vision-as-a-service (`analyze_image` MCP tool)
 
@@ -49,13 +46,7 @@ Cost comparison for a 20-step run with one validation per step:
 
 Endpoint config defaults: `LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1`, `LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni`, `LMSTUDIO_API_KEY=lm-studio`.
 
-**Configuration cascade** (lower lines override higher lines, except process env which always wins):
-
-1. Process env (set in shell or `.envrc`)
-2. `<PWD>/.e2e-testing.env`
-3. `~/.config/claude-e2e-testing/config.env`
-
-The MCP server reloads the cascade on every tool call, so editing `.e2e-testing.env` takes effect without restarting Claude Code.
+**Configuration**: a single `.testing.yml` in the project root drives both `e2e-testing` and `mobile-testing`. The MCP server reloads the YAML on every tool call, so edits take effect without restarting Claude Code. Process env `LMSTUDIO_*` vars override the YAML at runtime.
 
 The pattern is opt-in: when the LM Studio reply is ambiguous, Claude can still `Read` the PNG directly. Unreachable-endpoint failures surface as a clear MCP tool error, never a silent fallback.
 
@@ -64,7 +55,7 @@ The pattern is opt-in: when the LM Studio reply is ambiguous, Claude can still `
 The local executor launches Chromium **headless by default** — useful for CI but unhelpful when you're debugging. Two ways to make it visible:
 
 - **Per-run flag**: pass `--headed` to `/run-checklist` (or directly to `e2e_local_runner.py`).
-- **Per-project**: set `E2E_HEADED=1` in `<project>/.e2e-testing.env` (or `export E2E_HEADED=1` in your shell). The runner ORs this with `--headed`, so either path triggers a headed window.
+- **Per-project**: set `web.browser.headed: true` in `<project>/.testing.yml`. The runner ORs this with `--headed`, so either path triggers a headed window.
 
 The cloud executor (`/run-checklist` with `E2E_EXECUTOR=cloud`) goes through the Playwright MCP, which already shows the browser by default — these env knobs only affect the local path.
 
@@ -144,7 +135,7 @@ Same input format as `/run-checklist` and (almost) same output, but execution ha
 |---|---|---|
 | Browser automation cost | Claude tokens (screenshots dominate) | Free (local inference) |
 | Required setup | Playwright MCP plugin | Local model + Chromium + `.env.local` |
-| Credentials | HITL with secrets pulled from `credentials_file` | **Not yet supported** — protected pages will fail |
+| Credentials | Reads `credentials.<role>` from `.testing.yml` and pulls them on demand at login steps | Reads `credentials.<role>` from `.testing.yml` and injects the full role map into each step's system prompt — login flows work end-to-end |
 | CLI step support | Yes (curl, docker, gh, npm, …) | Yes for pure-CLI steps (subprocess + single-turn LM verdict). Mixed browser+CLI steps still run as browser-only — the auto-execution of bundled CLI commands inside a browser step is a Phase 5 item. |
 | Shape support | Table / Prose / Nested / CLI | Same, parsed by the same `parse_checklist.py` |
 | Recovery from tool errors | Yes (Claude reasons over failures) | Yes (the local model retries; loop guarded by `--max-iterations`) |
@@ -154,7 +145,7 @@ Same input format as `/run-checklist` and (almost) same output, but execution ha
 
 1. Install a vision + tool-calling model in LM Studio. Tested with `nvidia/nemotron-3-nano-omni` (Apple Silicon MLX build, ~32B, 200K context).
 2. Enable "Serve on Local Network" in LM Studio so the runner can reach it.
-3. Configure the endpoint in **one** of the three locations below (cascade explained next).
+3. Create `.testing.yml` in your project root (see schema below).
 4. Install Playwright Chromium: `uv run --with playwright python -m playwright install chromium` (the slash command will offer to do this if missing).
 5. (Optional) Validate everything with the capability check:
    ```bash
@@ -162,53 +153,41 @@ Same input format as `/run-checklist` and (almost) same output, but execution ha
    ```
    It prints a `GO / NO-GO` verdict on reachability, vision grounding, and tool calling.
 
-**Configuration cascade (where to put the endpoint):**
+**Configuration: the unified `.testing.yml`**
 
-The runner looks for `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, and `LMSTUDIO_API_KEY` in this order — **lower lines override higher lines**, except shell env which always wins:
+Create `.testing.yml` in your project root. Same file drives both `e2e-testing` and `mobile-testing`:
 
-| # | Location | When to use |
-|---|---|---|
-| 1 | `${CLAUDE_PLUGIN_ROOT}/scripts/.env.local` (plugin-dev fallback) | Only when developing this plugin in-tree. Don't rely on it for marketplace installs — the directory may be wiped on update. |
-| 2 | `${XDG_CONFIG_HOME:-$HOME/.config}/claude-e2e-testing/config.env` (user-global) | One endpoint shared across all your projects. Persists across plugin updates. Sync via dotfiles. |
-| 3 | `${CWD}/.e2e-testing.env` (per-project) — **recommended** | Different endpoints per project (e.g. staging vs prod model). Add the file to your project's `.gitignore`. |
-| 4 | Process env (`export LMSTUDIO_BASE_URL=...`) | direnv / `.envrc` / `mise` users. Wins over every file. |
+```yaml
+executor: local                # local | cloud  (overridable via E2E_EXECUTOR / MOBILE_EXECUTOR)
 
-**Examples — pick ONE:**
+web:
+  browser:
+    engine: chromium           # chromium | firefox | webkit
+    headed: true               # local executor only — cloud always shows the browser
+  base_url: https://staging.example.com
 
-Per-project (the common case): create `.e2e-testing.env` in your project root —
+lmstudio:                      # only used by executor: local
+  base_url: http://192.168.1.101:1234/v1
+  model: nvidia/nemotron-3-nano-omni
+  api_key: ${LMSTUDIO_API_KEY} # ${VAR} → pulled from process env (useful in CI)
 
-```bash
-# .e2e-testing.env  (gitignore me!)
-LMSTUDIO_BASE_URL=http://192.168.1.101:1234/v1
-LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni
-LMSTUDIO_API_KEY=lm-studio
+run:
+  auto_confirm_destructive: false
+  pre:  ["docker compose up -d"]
+  post: ["docker compose logs > .e2e-runs/last-logs.txt"]
+
+credentials:                   # used by the cloud test-executor on login steps
+  admin:    {email: admin@x.com,    password: ${ADMIN_PWD}}
+  reseller: {email: reseller@x.com, password: hunter2}
 ```
 
-Then add to your project's `.gitignore`:
+`${VAR}` interpolation runs on every string scalar — pulls from process env at load time, empty string when unset. Process env `LMSTUDIO_BASE_URL` / `LMSTUDIO_MODEL` / `LMSTUDIO_API_KEY` always override the YAML, so direnv / `.envrc` / `mise` users can keep doing what they do.
+
+Add to your project's `.gitignore`:
 
 ```
-.e2e-testing.env
+.testing.yml
 .e2e-runs/
-```
-
-User-global (set once, reuse everywhere):
-
-```bash
-mkdir -p ~/.config/claude-e2e-testing
-cat > ~/.config/claude-e2e-testing/config.env <<'EOF'
-LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1
-LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni
-LMSTUDIO_API_KEY=lm-studio
-EOF
-chmod 0600 ~/.config/claude-e2e-testing/config.env
-```
-
-direnv / `.envrc`:
-
-```bash
-# .envrc  (in your project root, then `direnv allow`)
-export LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1
-export LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni
 ```
 
 **Verifying setup:**
@@ -217,9 +196,7 @@ export LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni
 uv run plugins/e2e-testing/scripts/e2e_local_runner.py --check-config --project-root .
 ```
 
-The output lists every cascade level (`loaded` / `not found`), the resolved values, and finishes with `config_status=ok` (rc=0) or `config_status=incomplete` (rc=2) plus a hint of where to put the file. The `/run-checklist-local` slash command runs the same check during step 3.
-
-When invoked from `/run-checklist-local`, the agent stops with a HITL prompt (offering to write the config file for you) if the check returns `incomplete` — no surprises. When invoked directly via `uv run`, the runner falls back to localhost defaults, which is convenient when LM Studio is on the same machine as the runner.
+The output lists the resolved values and finishes with `config_status=ok` (rc=0) or `config_status=incomplete` (rc=2) plus a hint of what to fix. The `/run-checklist-local` slash command runs the same check during step 3 and offers to write a minimal `.testing.yml` for you if missing.
 
 **Output:**
 
@@ -272,22 +249,6 @@ The agent prompts you to choose between these (and a "scope it now" path) automa
 | CLI-only | Prose without UI steps |
 
 Italian and English column headers both work.
-
-## Per-project configuration (optional)
-
-Create `.e2e-testing.yml` in your project root or next to the checklist:
-
-```yaml
-base_url: https://staging.example.com
-browser: chromium
-headed: true
-credentials_file: ./docs/TESTING_CREDENTIALS.md
-pre_run:
-  - docker compose up -d
-post_run:
-  - docker compose logs > .e2e-runs/last-logs.txt
-auto_confirm_destructive: false
-```
 
 ## Output
 

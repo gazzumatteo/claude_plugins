@@ -135,14 +135,7 @@ Two MCP tools let the orchestrating Claude session offload PNG analysis to LM St
 
 Both read endpoint config from the same env vars as the local runner (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`). Defaults: `http://127.0.0.1:1234/v1`, `nvidia/nemotron-3-nano-omni`, `lm-studio`.
 
-**Configuration cascade** (lower lines override higher lines, except process env which always wins):
-
-1. Process env (set in shell or `.envrc`)
-2. `<PWD>/.mobile-testing.env`
-3. `<PWD>/.e2e-testing.env` (fallback for projects sharing LM Studio config)
-4. `~/.config/claude-mobile-testing/config.env`
-
-The MCP server reloads the cascade on every tool call, so editing `.mobile-testing.env` takes effect without restarting Claude Code.
+**Configuration**: a single `.testing.yml` in the project root drives both `mobile-testing` and `e2e-testing`. The MCP server reloads the YAML on every tool call, so edits take effect without restarting Claude Code. Process env `LMSTUDIO_*` vars override the YAML at runtime. See the e2e-testing README for the full schema.
 
 Errors (endpoint unreachable, empty reply) surface as MCP tool errors with the failing URL/model — no silent degradation.
 
@@ -179,15 +172,7 @@ Or via the slash command (orchestrates the agent):
 /mobile-runner-local --checklist path/to/checklist.md --device-id <udid>
 ```
 
-Configuration cascade (lowest precedence first; process env always wins):
-
-1. `<plugin>/scripts/.env.local` (in-tree dev)
-2. `~/.config/claude-mobile-testing/config.env` (user-global)
-3. `<project>/.e2e-testing.env` — **fallback, `LMSTUDIO_*` keys only**, so you can reuse the e2e-testing plugin's project file without leaking other vars
-4. `<project>/.mobile-testing.env` (per-project, overrides the e2e fallback)
-5. Process env (`LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`, `LMSTUDIO_API_KEY`)
-
-Defaults: `LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1`, `LMSTUDIO_MODEL=nvidia/nemotron-3-nano-omni`.
+Configuration: `<project>/.testing.yml` (`lmstudio:` block). Process env `LMSTUDIO_BASE_URL` / `LMSTUDIO_MODEL` / `LMSTUDIO_API_KEY` always overrides the YAML. Defaults: `http://127.0.0.1:1234/v1`, `nvidia/nemotron-3-nano-omni`.
 
 Checklist format (markdown, prose):
 
@@ -261,11 +246,7 @@ The `execute_dsl` tool accepts a JSON DSL with `version` and `steps`:
 
 ### Choosing the executor (cloud vs local)
 
-`/mobile-runner` picks the executor at run time from `MOBILE_EXECUTOR` (cascade, lowest precedence first):
-
-1. `<project>/.mobile-testing.env` → `MOBILE_EXECUTOR=local`
-2. `<project>/.e2e-testing.env` → `MOBILE_EXECUTOR=local` (fallback for projects that share config)
-3. Process env (`MOBILE_EXECUTOR=local` exported in shell)
+`/mobile-runner` reads `executor:` from `<project>/.testing.yml`. Process env `MOBILE_EXECUTOR` overrides it.
 
 Default when unset: `cloud`. Acceptable values: `cloud` | `local`.
 

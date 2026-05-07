@@ -71,7 +71,7 @@ If memory tools are unavailable or return nothing useful, note "no prior project
 
 ### 5. Config; record credentials path only
 
-If there's a `.e2e-testing.yml`, `Read` it (small). If the summary has `credentials_ref`, record the path but do NOT read its content here — pass the path to the auditor and let it decide whether to read it.
+If there's a `.testing.yml`, `Read` it (small). If the summary has `credentials_ref` (= the YAML's path when its `credentials:` block exists), record the path but do NOT read the credential values here — pass the path to the auditor and let it decide whether to read them.
 
 ### 6. Delegate the audit to `checklist-auditor`
 
@@ -81,7 +81,7 @@ If there's a `.e2e-testing.yml`, `Read` it (small). If the summary has `credenti
 - Absolute path to the original markdown file (read-only to the auditor)
 - `baseline` SHA and the git outputs from step 3
 - Memory notes from step 4 (a short prose paragraph, or "no memory available")
-- Path to `.e2e-testing.yml` and credentials file (if any) — auditor reads on demand
+- Path to `.testing.yml` (which holds both config and credentials) — auditor reads on demand
 - Repo root path
 - Return-message contract: the auditor MUST save its full report to `/tmp/e2e-validate-audit-<ts>.json` and reply with one line: `AUDIT_COMPLETE <path>`.
 

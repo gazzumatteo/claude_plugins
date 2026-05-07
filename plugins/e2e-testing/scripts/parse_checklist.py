@@ -135,14 +135,26 @@ def extract_prereqs(text: str) -> list[str]:
 
 
 def find_credentials_ref(source_path: Path) -> str | None:
-    """Look for a sibling or parent TESTING_CREDENTIALS.md file."""
-    for candidate in (
-        source_path.parent / "TESTING_CREDENTIALS.md",
-        source_path.parent.parent / "TESTING_CREDENTIALS.md",
-        source_path.parent / "CREDENTIALS.md",
-    ):
-        if candidate.exists():
-            return str(candidate)
+    """Look for a `.testing.yml` (project root or up the tree) that has credentials.
+
+    Returns the path to the YAML if a `credentials:` block exists, else None.
+    The cloud test-executor uses this to know where to look for login secrets.
+    """
+    here = source_path.parent
+    for parent in (here, *here.parents):
+        candidate = parent / ".testing.yml"
+        if not candidate.exists():
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return None
+        for line in text.splitlines():
+            # Only top-level `credentials:` counts — a nested key (e.g. inside `external_api:`)
+            # would be indented and must not false-positive.
+            if line.startswith("credentials:"):
+                return str(candidate)
+        return None
     return None
 
 

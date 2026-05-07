@@ -12,14 +12,8 @@ Run (must be invoked through the plugin venv so `mobile_mcp` is importable):
 Verify config without running anything:
     uv run --directory plugins/mobile-testing python scripts/mobile_local_runner.py --check-config
 
-Configuration cascade (lower lines override higher lines, except process env):
-    1. Process env (LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, LMSTUDIO_API_KEY)
-    2. Per-project:  <project_root>/.mobile-testing.env
-    3. Per-project:  <project_root>/.e2e-testing.env  ← fallback, LMSTUDIO_* keys only
-                     (lets you reuse the e2e-testing plugin's project config)
-    4. User-global:  $XDG_CONFIG_HOME/claude-mobile-testing/config.env
-                     (default: ~/.config/claude-mobile-testing/config.env)
-    5. Plugin-dev:   <plugin>/scripts/.env.local  (only when working in-tree)
+Configuration: a single `.testing.yml` in the project root (see mobile_mcp/config.py
+for the schema). Process env LMSTUDIO_* vars override the YAML at runtime.
 
 Checklist format (prose, easiest):
     # Title
@@ -47,80 +41,22 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values, load_dotenv
 from openai import OpenAI
 
 from mobile_mcp.backends.base import BackendBase
 from mobile_mcp.backends.native.router import NativeBackendRouter
-
-DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni"
-DEFAULT_API_KEY = "lm-studio"
-
-PROTECTED_KEYS = ("LMSTUDIO_BASE_URL", "LMSTUDIO_MODEL", "LMSTUDIO_API_KEY")
+from mobile_mcp.config import (
+    CONFIG_FILENAME,
+    DEFAULT_LMSTUDIO_API_KEY as DEFAULT_API_KEY,
+    DEFAULT_LMSTUDIO_BASE_URL as DEFAULT_BASE_URL,
+    DEFAULT_LMSTUDIO_MODEL as DEFAULT_MODEL,
+    ConfigError,
+    Settings,
+)
 
 LOOP_GUARD_THRESHOLD = 3
 DEFAULT_MAX_ITERATIONS = 12
 ASSERT_DEFAULT_TIMEOUT_MS = 2000
-
-
-# ──────────────────────────── env cascade ────────────────────────────
-
-def _user_config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "claude-mobile-testing" / "config.env"
-
-
-def _parse_dotenv_keys(path: Path) -> list[str]:
-    keys: list[str] = []
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return keys
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        k = s.split("=", 1)[0].strip()
-        if k.isidentifier():
-            keys.append(k)
-    return keys
-
-
-def load_env_cascade(project_root: Path) -> list[tuple[str, Path, list[str]]]:
-    """Walk lowest-precedence to highest, layering env files. Process env always wins.
-
-    `.e2e-testing.env` is read selectively (only LMSTUDIO_* keys propagate) so the
-    user can share LM Studio config across plugins without leaking e2e-specific
-    vars (PLAYWRIGHT_*, etc.) into mobile-testing's environment.
-    """
-    process_env_snapshot = {k: os.environ[k] for k in PROTECTED_KEYS if k in os.environ}
-    sources: list[tuple[str, Path, list[str]]] = []
-    # (level, path, protected_keys_only)
-    candidates: list[tuple[str, Path, bool]] = [
-        ("plugin-dev",          Path(__file__).parent / ".env.local",        False),
-        ("user-global",         _user_config_path(),                         False),
-        ("project-shared(e2e)", project_root / ".e2e-testing.env",           True),
-        ("project-local",       project_root / ".mobile-testing.env",        False),
-    ]
-    for level, path, protected_only in candidates:
-        if not path.exists():
-            continue
-        relevant = [k for k in _parse_dotenv_keys(path) if k in PROTECTED_KEYS]
-        if protected_only:
-            values = dotenv_values(path)
-            for k in PROTECTED_KEYS:
-                v = values.get(k)
-                if v is not None:
-                    os.environ[k] = v
-        else:
-            load_dotenv(path, override=True)
-        sources.append((level, path, relevant))
-    for k, v in process_env_snapshot.items():
-        os.environ[k] = v
-    if process_env_snapshot:
-        sources.append(("process-env", Path("(shell)"), list(process_env_snapshot.keys())))
-    return sources
 
 
 # ──────────────────────────── checklist parser ────────────────────────────
@@ -462,6 +398,21 @@ SYSTEM_PROMPT = (
 )
 
 
+def _format_auth_context(credentials: dict[str, dict[str, str]]) -> str:
+    """Build the credentials block injected into each step's system prompt."""
+    if not credentials:
+        return ""
+    lines = ["Login credentials available for this run. When a step asks you to log in or authenticate:",
+             "  • If the step names a role (admin, reseller, user, ...), use that role.",
+             "  • If no role is named, default to 'admin'.",
+             "  • Type the email/password verbatim — do NOT invent values."]
+    for role, fields in credentials.items():
+        email = fields.get("email", "")
+        password = fields.get("password", "")
+        lines.append(f"  - {role}: email={email}, password={password}")
+    return "\n".join(lines)
+
+
 def run_step(
     client: OpenAI,
     model: str,
@@ -470,6 +421,7 @@ def run_step(
     step: dict[str, Any],
     out_dir: Path,
     max_iterations: int,
+    auth_context: str = "",
 ) -> StepResult:
     evidence = out_dir / f"step-{step['id']}"
     tools = MobileTools(backend, device_id, evidence)
@@ -502,8 +454,9 @@ def run_step(
         ]
     else:
         initial_content = user_intro
+    system = SYSTEM_PROMPT + ("\n\n" + auth_context if auth_context else "")
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system},
         {"role": "user", "content": initial_content},
     ]
 
@@ -656,19 +609,22 @@ def write_report(out_dir: Path, title: str, device_id: str, results: list[StepRe
 
 # ──────────────────────────── main ────────────────────────────
 
-def cmd_check_config(sources: list[tuple[str, Path, list[str]]]) -> int:
-    base_url = os.environ.get("LMSTUDIO_BASE_URL", DEFAULT_BASE_URL)
-    model = os.environ.get("LMSTUDIO_MODEL", DEFAULT_MODEL)
-    print(f"LMSTUDIO_BASE_URL = {base_url}")
-    print(f"LMSTUDIO_MODEL    = {model}")
-    print(f"MOBILE_BACKEND    = {os.environ.get('MOBILE_BACKEND', 'native')}")
-    print(f"MOBILE_SCREENSHOT_DIR = {os.environ.get('MOBILE_SCREENSHOT_DIR', '(unset → tempdir)')}")
-    print("\nEnv cascade (lowest precedence first):")
-    if not sources:
-        print("  (no env files found)")
-    for level, path, keys in sources:
-        keys_str = ", ".join(keys) if keys else "(no LMSTUDIO_* keys)"
-        print(f"  [{level}] {path} → {keys_str}")
+def cmd_check_config(project_root: Path, settings: Settings) -> int:
+    print(f"Project root: {project_root}")
+    if settings.source_path is None:
+        print(f"  [not found] {CONFIG_FILENAME} — none of: project_root, $PWD, cwd")
+    else:
+        print(f"  [loaded   ] {settings.source_path}")
+    print()
+    print("Resolved values:")
+    print(f"  executor              = {settings.executor}")
+    print(f"  mobile.device.platform= {settings.mobile.device.platform or '(unset)'}")
+    print(f"  mobile.device.udid    = {settings.mobile.device.udid or '(unset)'}")
+    print(f"  lmstudio.base_url     = {settings.lmstudio.base_url}")
+    print(f"  lmstudio.model        = {settings.lmstudio.model}")
+    print(f"  MOBILE_BACKEND        = {os.environ.get('MOBILE_BACKEND', 'native')}")
+    print(f"  MOBILE_SCREENSHOT_DIR = {os.environ.get('MOBILE_SCREENSHOT_DIR', '(unset → run dir)')}")
+    print(f"  credentials           = {sorted(settings.credentials.keys()) if settings.credentials else '(none)'}")
     return 0
 
 
@@ -684,10 +640,16 @@ def main() -> int:
                    help="Print the parsed checklist as JSON to stdout and exit (no LM Studio call, no device interaction).")
     args = p.parse_args()
 
-    sources = load_env_cascade(args.project_root)
+    project_root = Path(args.project_root).expanduser().resolve()
+    try:
+        settings = Settings.load(project_root)
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    settings.apply_lmstudio_env()
 
     if args.check_config:
-        return cmd_check_config(sources)
+        return cmd_check_config(project_root, settings)
 
     if args.parse_only:
         if not args.checklist:
@@ -721,6 +683,7 @@ def main() -> int:
     model = os.environ.get("LMSTUDIO_MODEL", DEFAULT_MODEL)
     api_key = os.environ.get("LMSTUDIO_API_KEY", DEFAULT_API_KEY)
     client = OpenAI(base_url=base_url, api_key=api_key)
+    auth_context = _format_auth_context(settings.credentials)
 
     backend = make_backend()
     print(f"checklist: {title}  ({len(steps)} steps)")
@@ -737,7 +700,7 @@ def main() -> int:
     for step in steps:
         print(f"  ▶ step {step['id']}: {step['action'][:80]}")
         try:
-            r = run_step(client, model, backend, args.device_id, step, out_dir, args.max_iterations)
+            r = run_step(client, model, backend, args.device_id, step, out_dir, args.max_iterations, auth_context)
         except Exception as exc:  # noqa: BLE001
             tb = traceback.format_exc()
             (out_dir / f"step-{step['id']}-crash.txt").write_text(tb)

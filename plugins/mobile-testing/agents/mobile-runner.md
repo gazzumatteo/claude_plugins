@@ -122,4 +122,4 @@ Verdict rules: `PASSED` if all pass; `BUGS_FOUND` if any `fail`; `FAILED` if any
 
 ## When the local executor is preferable
 
-If the user has LM Studio configured (`MOBILE_EXECUTOR=local` or `LMSTUDIO_BASE_URL` set in `.mobile-testing.env`), the dispatcher routes to `mobile-runner-local` instead. You only see invocations where the user explicitly chose cloud (or the local endpoint is unreachable). Do not second-guess that decision.
+If the user has LM Studio configured (`executor: local` in `.testing.yml`, or `MOBILE_EXECUTOR=local` in the shell), the dispatcher routes to `mobile-runner-local` instead. You only see invocations where the user explicitly chose cloud (or the local endpoint is unreachable). Do not second-guess that decision.

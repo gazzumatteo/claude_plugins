@@ -49,43 +49,38 @@ If the checklist path is missing, reply `RUN_FAILED missing checklist path` and 
 
 The plugin's scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`. The runner is `e2e_local_runner.py`, the parser is `parse_checklist.py`, the env template is `.env.example`, and the user's secrets (if any) live in `.env.local` (gitignored). Record `SCRIPTS=${CLAUDE_PLUGIN_ROOT}/scripts` for reuse below.
 
-### 3. Verify endpoint configuration (cascade)
+### 3. Verify endpoint configuration
 
-The runner resolves config from a 4-level cascade (lowest to highest precedence):
+The runner reads `.testing.yml` from the project root (see `${SCRIPTS}/config.py` for the full schema). Process env `LMSTUDIO_*` vars override the YAML at runtime.
 
-1. plugin-dev fallback `${SCRIPTS}/.env.local` (only when developing the plugin in-tree)
-2. user-global `${XDG_CONFIG_HOME:-$HOME/.config}/claude-e2e-testing/config.env`
-3. per-project `${CWD}/.e2e-testing.env`
-4. process env (already exported in shell or via direnv)
-
-Run `--check-config` to print which sources were found and whether the resolved values are complete:
+Run `--check-config` to print the resolved values and whether they're complete:
 
 ```bash
 uv run "$SCRIPTS/e2e_local_runner.py" --check-config --project-root "$CWD"
 ```
 
-The exit code is `0` when both `LMSTUDIO_BASE_URL` and `LMSTUDIO_MODEL` are resolved, `2` when at least one is unset. Capture both stdout (the human report — forward only the relevant lines to the user) and the exit code.
+Exit code `0` when `.testing.yml` is found and `lmstudio.base_url` is not the loopback default; `2` otherwise. Capture stdout and exit code.
 
 If `config_status=incomplete`, ask the user ONCE via `AskUserQuestion`:
 
-- title: "Local endpoint not configured"
+- title: "`.testing.yml` not configured for local executor"
 - options:
-  - **"Per-project — write `.e2e-testing.env` in `${CWD}`"** (recommended)
-  - **"User-global — write `~/.config/claude-e2e-testing/config.env`"**
-  - **"I'll set shell env vars, retry"**
+  - **"Create `.testing.yml` in `${CWD}` (recommended)"**
+  - **"I'll edit it myself, retry"**
   - **"Cancel — fall back to /run-checklist"**
 
-If they pick a write option, ask a follow-up `AskUserQuestion` for `LMSTUDIO_BASE_URL` (free-text) and `LMSTUDIO_MODEL` (free-text). Then write the file with `Bash`:
+If they pick "Create", ask a follow-up `AskUserQuestion` for the LM Studio `base_url` and `model`. Write the minimal YAML with `Bash`:
 
 ```bash
-mkdir -p "$(dirname "$TARGET")" && cat > "$TARGET" <<'EOF' && chmod 0600 "$TARGET"
-LMSTUDIO_BASE_URL=<answer1>
-LMSTUDIO_MODEL=<answer2>
-LMSTUDIO_API_KEY=lm-studio
+cat > "${CWD}/.testing.yml" <<EOF && chmod 0600 "${CWD}/.testing.yml"
+executor: local
+lmstudio:
+  base_url: <answer-base-url>
+  model: <answer-model>
 EOF
 ```
 
-Re-run `--check-config`. If still incomplete, reply `RUN_FAILED config write did not stick — check ${TARGET}` and stop.
+Re-run `--check-config`. If still incomplete, reply `RUN_FAILED .testing.yml write did not resolve — check ${CWD}/.testing.yml` and stop.
 
 If the user picks "Cancel", reply `RUN_FAILED local endpoint not configured — use /run-checklist instead` and stop.
 
@@ -95,7 +90,7 @@ Re-run `--check-config` JUST to capture the resolved BASE and MODEL into shell v
 
 ```bash
 eval "$(uv run "$SCRIPTS/e2e_local_runner.py" --check-config --project-root "$CWD" \
-  | awk -F' = ' '/LMSTUDIO_BASE_URL/{print "BASE="$2}/LMSTUDIO_MODEL/{print "MODEL="$2}')"
+  | awk -F' *= *' '/lmstudio.base_url/{print "BASE="$2}/lmstudio.model/{print "MODEL="$2}')"
 ```
 
 Then:
@@ -129,7 +124,7 @@ Stop with `RUN_FAILED unparseable checklist (shape=<x>, step_count=<n>)` if `sha
 From the summary:
 - If `destructive_count > 0` and the user did not pass `--allow-destructive`, warn: "N destructive step(s) will be SKIPPED. Re-run with `--allow-destructive` to include them."
 - If `needs_cli_count > 0`, note: "M step(s) include CLI commands. Pure-CLI steps run via subprocess + single-turn LM verdict; mixed browser+CLI steps execute as browser-only (the bundled CLI commands are NOT auto-run inside a browser step yet)."
-- If `credentials_ref` is set, note it: the local runner currently does NOT read credentials. Tell the user the run will proceed without auth and may fail on protected pages.
+- If `credentials_ref` is set, the local runner injects every credential row (role, email, password) into each step's system prompt — so login steps work end-to-end. Note this to the user only if a `${VAR}` placeholder in the YAML may be unset in their shell (the runner resolves `${VAR}` at load time, missing vars become empty strings).
 - **Long-checklist guard.** If `step_count > 50` and the user did NOT pass `--only`, `--from`, or `--to`, ask via `AskUserQuestion` ONCE before running:
   - title: "This checklist has N steps — at ~30-40s/step that is roughly M minutes. Slash-command Bash windows time out at 10 minutes."
   - options:

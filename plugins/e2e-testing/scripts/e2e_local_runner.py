@@ -3,7 +3,7 @@
 # dependencies = [
 #     "openai>=1.50.0",
 #     "playwright>=1.45.0",
-#     "python-dotenv>=1.0.0",
+#     "pyyaml>=6.0",
 # ]
 # ///
 """Local executor for E2E test checklists.
@@ -26,12 +26,8 @@ Run:
 Verify config without running anything:
     uv run e2e_local_runner.py --check-config [--project-root /path/to/project]
 
-Configuration cascade (lower lines override higher lines, except process env which always wins):
-    1. Process env (LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, LMSTUDIO_API_KEY) — direnv/.envrc/shell
-    2. Per-project:  <project_root>/.e2e-testing.env
-    3. User-global:  $XDG_CONFIG_HOME/claude-e2e-testing/config.env
-                     (default: ~/.config/claude-e2e-testing/config.env)
-    4. Plugin-dev fallback: <plugin>/scripts/.env.local  (only when working in-tree)
+Configuration: a single `.testing.yml` in the project root (see scripts/config.py
+for the schema). Process env LMSTUDIO_* vars override the YAML at runtime.
 """
 
 from __future__ import annotations
@@ -48,78 +44,19 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-from openai import OpenAI
-from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
+# Sibling import (PEP 723 script — add scripts/ to sys.path before importing config).
+sys.path.insert(0, str(Path(__file__).parent))
+from config import (  # noqa: E402
+    DEFAULT_LMSTUDIO_API_KEY as DEFAULT_API_KEY,
+    DEFAULT_LMSTUDIO_BASE_URL as DEFAULT_BASE_URL,
+    DEFAULT_LMSTUDIO_MODEL as DEFAULT_MODEL,
+    CONFIG_FILENAME,
+    ConfigError,
+    Settings,
+)
 
-DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni"
-DEFAULT_API_KEY = "lm-studio"
-
-PROTECTED_KEYS = ("LMSTUDIO_BASE_URL", "LMSTUDIO_MODEL", "LMSTUDIO_API_KEY")
-
-_TRUTHY = {"1", "true", "yes", "on"}
-
-
-def _env_truthy(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in _TRUTHY
-
-
-def _user_config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "claude-e2e-testing" / "config.env"
-
-
-def _parse_dotenv_keys(path: Path) -> list[str]:
-    keys: list[str] = []
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return keys
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        k = s.split("=", 1)[0].strip()
-        if k.isidentifier():
-            keys.append(k)
-    return keys
-
-
-def load_env_cascade(project_root: Path) -> list[tuple[str, Path, list[str]]]:
-    """Load LMSTUDIO_* env vars from the 4-level cascade.
-
-    Walks lowest precedence to highest (each step uses override=True so later
-    files beat earlier ones). Process env is snapshotted before loading and
-    restored after, so shell-exported values always win.
-
-    Returns a list of (level, path, relevant_keys_provided) for diagnostics.
-    """
-    process_env_snapshot = {
-        k: os.environ[k] for k in PROTECTED_KEYS if k in os.environ
-    }
-
-    sources: list[tuple[str, Path, list[str]]] = []
-
-    candidates: list[tuple[str, Path]] = [
-        ("plugin-dev", Path(__file__).parent / ".env.local"),
-        ("user-global", _user_config_path()),
-        ("project-local", project_root / ".e2e-testing.env"),
-    ]
-
-    for level, path in candidates:
-        if path.exists():
-            relevant = [k for k in _parse_dotenv_keys(path) if k in PROTECTED_KEYS]
-            load_dotenv(path, override=True)
-            sources.append((level, path, relevant))
-
-    # Process env always wins — restore it on top of whatever the files loaded.
-    for k, v in process_env_snapshot.items():
-        os.environ[k] = v
-    if process_env_snapshot:
-        sources.append(("process-env", Path("(shell)"), list(process_env_snapshot.keys())))
-
-    return sources
+from openai import OpenAI  # noqa: E402
+from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright  # noqa: E402
 
 ACCESSIBILITY_SNAPSHOT_LIMIT = 8000
 TOOL_TIMEOUT_MS = 8000
@@ -411,6 +348,28 @@ def b64_image(png: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(png).decode()}"}}
 
 
+def _format_auth_context(credentials: dict[str, dict[str, str]], base_url: str | None) -> str:
+    """Build the credentials/base_url block injected into each step's system prompt.
+
+    Only emit when there's something non-trivial to say. Returns "" otherwise so the
+    base prompt stays compact for projects without credentials.
+    """
+    parts: list[str] = []
+    if base_url:
+        parts.append(f"Base URL for the application under test: {base_url}")
+    if credentials:
+        lines = ["", "Login credentials available for this run. When a step asks you to log in or authenticate:",
+                 "  • If the step names a role (admin, reseller, user, ...), use that role.",
+                 "  • If no role is named, default to 'admin'.",
+                 "  • Use the email/password verbatim — do NOT invent values."]
+        for role, fields in credentials.items():
+            email = fields.get("email", "")
+            password = fields.get("password", "")
+            lines.append(f"  - {role}: email={email}, password={password}")
+        parts.append("\n".join(lines))
+    return "\n".join(parts)
+
+
 def run_step(
     client: OpenAI,
     model: str,
@@ -419,6 +378,7 @@ def run_step(
     out_dir: Path,
     max_iterations: int,
     inject_error_on: str | None,
+    auth_context: str = "",
 ) -> StepResult:
     evidence = out_dir / f"step-{step['id']}"
     tools = BrowserTools(page, evidence, inject_error_on)
@@ -439,6 +399,8 @@ def run_step(
         "(different selector, accessibility_snapshot, or finish_step('fail') with details).\n"
         "  - Never repeat a failing call unchanged."
     )
+    if auth_context:
+        system = system + "\n\n" + auth_context
     section_line = f"Section: {step['section']}\n" if step.get("section") else ""
     expected = (step.get("expected") or "").strip()
     if expected:
@@ -669,6 +631,7 @@ def run_cli_only_step(
     step: dict[str, Any],
     project_root: Path,
     out_dir: Path,
+    auth_context: str = "",
 ) -> StepResult:
     """Execute a pure-CLI step: run cli_commands as subprocesses, then ask the model
     in a single turn whether the transcript matches the expected outcome.
@@ -727,6 +690,8 @@ def run_cli_only_step(
         "  - Report bugs for genuine product defects (wrong values, broken integrations); do NOT report "
         "bugs about the test itself or about transient infra issues."
     )
+    if auth_context:
+        system = system + "\n\n" + auth_context
     user = (
         f"{section_line}"
         f"Step {step['id']}: {step['action']}\n"
@@ -834,42 +799,34 @@ def resolve_out_dir(args: argparse.Namespace, project_root: Path, ts: str) -> Pa
     return base / ts
 
 
-def cmd_check_config(project_root: Path, sources: list[tuple[str, Path, list[str]]]) -> int:
-    base_url = os.environ.get("LMSTUDIO_BASE_URL", "")
-    model = os.environ.get("LMSTUDIO_MODEL", "")
-    api_key = os.environ.get("LMSTUDIO_API_KEY", "")
-
+def cmd_check_config(project_root: Path, settings: Settings) -> int:
     print(f"Project root: {project_root}")
     print()
-    print("Cascade sources searched (lowest precedence first; later overrides earlier):")
-    candidate_paths = [
-        ("plugin-dev", Path(__file__).parent / ".env.local"),
-        ("user-global", _user_config_path()),
-        ("project-local", project_root / ".e2e-testing.env"),
-    ]
-    for level, path in candidate_paths:
-        loaded = next((s for s in sources if s[0] == level), None)
-        status = "loaded" if loaded else "not found"
-        keys = ",".join(loaded[2]) if loaded and loaded[2] else ""
-        keys_str = f"  -> {keys}" if keys else ""
-        print(f"  [{status:9}] {level:13} {path}{keys_str}")
-    process_loaded = next((s for s in sources if s[0] == "process-env"), None)
-    if process_loaded:
-        print(f"  [loaded   ] process-env   (shell)        -> {','.join(process_loaded[2])}")
+    if settings.source_path is None:
+        print(f"  [not found] {CONFIG_FILENAME} — none of: project_root, $PWD, cwd")
+    else:
+        print(f"  [loaded   ] {settings.source_path}")
     print()
     print("Resolved values:")
-    print(f"  LMSTUDIO_BASE_URL = {base_url or '(unset — using default ' + DEFAULT_BASE_URL + ')'}")
-    print(f"  LMSTUDIO_MODEL    = {model or '(unset — using default ' + DEFAULT_MODEL + ')'}")
-    print(f"  LMSTUDIO_API_KEY  = {'***set***' if api_key else '(unset — using default)'}")
+    print(f"  executor          = {settings.executor}")
+    print(f"  web.headed        = {settings.web.browser.headed}")
+    print(f"  web.base_url      = {settings.web.base_url or '(unset)'}")
+    print(f"  lmstudio.base_url = {settings.lmstudio.base_url}")
+    print(f"  lmstudio.model    = {settings.lmstudio.model}")
+    print(f"  lmstudio.api_key  = {'***set***' if settings.lmstudio.api_key and settings.lmstudio.api_key != DEFAULT_API_KEY else '(default)'}")
+    print(f"  credentials       = {sorted(settings.credentials.keys()) if settings.credentials else '(none)'}")
     print()
-    ok = bool(base_url and model)
+    is_default_endpoint = settings.lmstudio.base_url == DEFAULT_BASE_URL
+    ok = settings.source_path is not None and not is_default_endpoint
     print(f"config_status={'ok' if ok else 'incomplete'}")
     if not ok:
         print()
-        print("To fix: create one of these files (use scripts/.env.example as template):")
-        print(f"  Per-project (recommended): {project_root / '.e2e-testing.env'}")
-        print(f"  User-global:               {_user_config_path()}")
-        print("Or export LMSTUDIO_BASE_URL and LMSTUDIO_MODEL in your shell.")
+        if settings.source_path is None:
+            print(f"To fix: create {project_root / CONFIG_FILENAME}")
+            print(f"  See plugins/e2e-testing/scripts/config.py for the schema.")
+        else:
+            print(f"To fix: set lmstudio.base_url in {settings.source_path}")
+            print("  (currently using the loopback default — won't reach a real LM Studio).")
     return 0 if ok else 2
 
 
@@ -878,16 +835,15 @@ def main() -> int:
     arg_parser.add_argument("--checklist", default=None,
                             help="Path to a checklist .md (default: built-in smoke).")
     arg_parser.add_argument("--project-root", default=None,
-                            help="Project directory used for the per-project .e2e-testing.env lookup "
+                            help="Project directory used for the per-project .testing.yml lookup "
                                  "and for the default --out-dir (default: current working directory).")
     arg_parser.add_argument("--out-dir", default=None,
                             help="Where to write run artefacts. Default: <checklist_dir>/.e2e-runs/ "
                                  "or <project_root>/.e2e-runs/ for the built-in smoke.")
     arg_parser.add_argument("--check-config", action="store_true",
-                            help="Print the resolved env cascade and exit (rc=0 ok, 2 incomplete).")
+                            help="Print the resolved .testing.yml config and exit (rc=0 ok, 2 incomplete).")
     arg_parser.add_argument("--headed", action="store_true",
-                            help="Show the browser window. Also enabled by E2E_HEADED=1 in "
-                                 ".e2e-testing.env or the shell environment.")
+                            help="Show the browser window. ORs with web.browser.headed in .testing.yml.")
     arg_parser.add_argument("--max-iterations", type=int, default=8)
     arg_parser.add_argument("--inject-error", default=None,
                             help="Tool name whose first invocation fails on step 2 (one-shot)")
@@ -904,18 +860,27 @@ def main() -> int:
     args = arg_parser.parse_args()
 
     project_root = Path(args.project_root).expanduser().resolve() if args.project_root else Path.cwd().resolve()
-    sources = load_env_cascade(project_root)
-    # Fold E2E_HEADED (from .e2e-testing.env or process env) into args.headed so the
-    # downstream launch site (single source of truth) doesn't have to know about both.
-    if not args.headed and _env_truthy("E2E_HEADED"):
+
+    try:
+        settings = Settings.load(project_root)
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    settings.apply_lmstudio_env()
+    # YAML headed flag ORs with --headed CLI override (CLI never disables YAML's true).
+    if settings.web.browser.headed:
         args.headed = True
+    # Same for run.auto_confirm_destructive: YAML true ORs with the CLI flag.
+    if settings.run.auto_confirm_destructive:
+        args.allow_destructive = True
 
     if args.check_config:
-        return cmd_check_config(project_root, sources)
+        return cmd_check_config(project_root, settings)
 
-    base_url = os.environ.get("LMSTUDIO_BASE_URL") or DEFAULT_BASE_URL
-    model = os.environ.get("LMSTUDIO_MODEL") or DEFAULT_MODEL
-    api_key = os.environ.get("LMSTUDIO_API_KEY") or DEFAULT_API_KEY
+    base_url = settings.lmstudio.base_url
+    model = settings.lmstudio.model
+    api_key = settings.lmstudio.api_key
+    auth_context = _format_auth_context(settings.credentials, settings.web.base_url)
 
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = resolve_out_dir(args, project_root, ts)
@@ -927,7 +892,7 @@ def main() -> int:
     else:
         title, raw_steps, source = SMOKE_CHECKLIST_TITLE, SMOKE_CHECKLIST_STEPS, "built-in"
 
-    config_origin = ", ".join(s[0] for s in sources) if sources else "defaults"
+    config_origin = str(settings.source_path) if settings.source_path else "defaults"
     print(f"Run dir   : {out_dir}")
     print(f"Model     : {model}")
     print(f"BaseURL   : {base_url}")
@@ -975,6 +940,7 @@ def main() -> int:
 
                     r = _execute_step(
                         p, browser, page, step, args, client, model, project_root, out_dir,
+                        auth_context,
                     )
                     # _execute_step may have lazy-launched the browser — pick up the handles.
                     browser, page = r.browser, r.page
@@ -1076,6 +1042,7 @@ def _execute_step(
     model: str,
     project_root: Path,
     out_dir: Path,
+    auth_context: str = "",
 ) -> _ExecutedStep:
     """Run one step with full crash containment. Any unhandled exception becomes a
     StepResult(status='error', error=traceback) so the for-loop never aborts and
@@ -1090,7 +1057,7 @@ def _execute_step(
 
         if step.get("needs_cli") and not step.get("needs_browser"):
             print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")
-            r = run_cli_only_step(client, model, step, project_root, out_dir)
+            r = run_cli_only_step(client, model, step, project_root, out_dir, auth_context)
             return _ExecutedStep(r, browser, page)
 
         # Browser path — lazy-launch Chromium on first browser step.
@@ -1102,7 +1069,7 @@ def _execute_step(
         inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
         print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
         cleanup_page_state(page)
-        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj)
+        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj, auth_context)
         return _ExecutedStep(r, browser, page)
     except Exception as exc:  # noqa: BLE001
         evidence = out_dir / f"step-{step['id']}"

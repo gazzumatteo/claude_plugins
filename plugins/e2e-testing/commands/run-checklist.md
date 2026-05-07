@@ -12,13 +12,13 @@ This is the single entry point for running an E2E checklist. It picks the execut
 
 ### 1. Resolve the executor
 
-Use `Bash` ONCE to read `E2E_EXECUTOR` from the cascade (lowest precedence first):
+Use `Bash` ONCE to read `executor:` from `.testing.yml` in the project root. Process env `E2E_EXECUTOR` overrides:
 
 ```bash
 EXECUTOR=""
-if [ -f "${PWD}/.e2e-testing.env" ]; then
-  EXECUTOR=$(grep -E '^E2E_EXECUTOR=' "${PWD}/.e2e-testing.env" 2>/dev/null \
-             | tail -1 | cut -d= -f2- | tr -d '"' | xargs)
+if [ -f "${PWD}/.testing.yml" ]; then
+  EXECUTOR=$(awk -F': *' '/^executor:/ {gsub(/["'\'' ]/, "", $2); print $2; exit}' \
+             "${PWD}/.testing.yml" 2>/dev/null)
 fi
 EXECUTOR="${E2E_EXECUTOR:-$EXECUTOR}"
 EXECUTOR="${EXECUTOR:-cloud}"
@@ -48,5 +48,5 @@ When the subagent returns, print its final reply to the user **verbatim**. Do no
 ## Why a dispatcher
 
 - **Single entry point** — users learn one command, not two.
-- **Per-project switch** — drop `E2E_EXECUTOR=local` in `.e2e-testing.env` and every run on that project is local; teammates without LM Studio fall back to cloud automatically.
+- **Per-project switch** — set `executor: local` in `.testing.yml` and every run on that project is local; teammates without LM Studio can override with `E2E_EXECUTOR=cloud`.
 - **No magic** — the dispatcher prints the resolved value before delegating, so it's clear which path ran.

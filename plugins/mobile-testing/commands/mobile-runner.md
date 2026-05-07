@@ -12,23 +12,15 @@ This is the single entry point for running a mobile checklist. It picks the exec
 
 ### 1. Resolve the executor
 
-Use `Bash` ONCE to read `MOBILE_EXECUTOR` from the cascade (lowest precedence first):
+Use `Bash` ONCE to read `executor:` from `.testing.yml` in the project root. Process env `MOBILE_EXECUTOR` overrides:
 
 ```bash
 EXECUTOR=""
-# Lowest precedence: per-project mobile env file
-if [ -f "${PWD}/.mobile-testing.env" ]; then
-  EXECUTOR=$(grep -E '^MOBILE_EXECUTOR=' "${PWD}/.mobile-testing.env" 2>/dev/null \
-             | tail -1 | cut -d= -f2- | tr -d '"' | xargs)
+if [ -f "${PWD}/.testing.yml" ]; then
+  EXECUTOR=$(awk -F': *' '/^executor:/ {gsub(/["'\'' ]/, "", $2); print $2; exit}' \
+             "${PWD}/.testing.yml" 2>/dev/null)
 fi
-# Fallback: per-project e2e env file (since users often share LMSTUDIO_* there)
-if [ -z "$EXECUTOR" ] && [ -f "${PWD}/.e2e-testing.env" ]; then
-  EXECUTOR=$(grep -E '^MOBILE_EXECUTOR=' "${PWD}/.e2e-testing.env" 2>/dev/null \
-             | tail -1 | cut -d= -f2- | tr -d '"' | xargs)
-fi
-# Highest precedence: process env
 EXECUTOR="${MOBILE_EXECUTOR:-$EXECUTOR}"
-# Default
 EXECUTOR="${EXECUTOR:-cloud}"
 echo "MOBILE_EXECUTOR=$EXECUTOR"
 ```
@@ -57,5 +49,5 @@ When the subagent returns, print its final reply to the user **verbatim**. Do no
 ## Why a dispatcher
 
 - **Single entry point** — users learn one command, not two.
-- **Per-project switch** — drop `MOBILE_EXECUTOR=local` in `.mobile-testing.env` and every run on that project is local; teammates without LM Studio fall back to cloud automatically.
+- **Per-project switch** — set `executor: local` in `.testing.yml` and every run on that project is local; teammates without LM Studio can override with `MOBILE_EXECUTOR=cloud`.
 - **No magic** — the dispatcher prints the resolved value before delegating, so it's clear which path ran.

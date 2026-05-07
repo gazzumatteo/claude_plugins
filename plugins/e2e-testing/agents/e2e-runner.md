@@ -47,24 +47,24 @@ Stdout is a small summary: `title`, `shape`, `step_count`, `destructive_count`, 
 
 ### 3. Per-project config
 
-`Glob` for `.e2e-testing.yml` next to the checklist or at the repo root. If found, `Read` the file (small) and note: `base_url`, `credentials_file`, `pre_run`, `post_run`, `auto_confirm_destructive`, `browser`.
+`Glob` for `.testing.yml` at the repo root (or up the tree from the checklist). If found, `Read` the file (small) and note: `web.base_url`, `run.pre`, `run.post`, `run.auto_confirm_destructive`, `web.browser.engine`.
 
-### 4. Credentials path (don't read content)
+### 4. Credentials reference (don't read content)
 
-If the parsed summary has `credentials_ref` or config has `credentials_file`, record the **path only**. Do not `Read` the file here — the test-executor will read it on demand. Keeping creds out of this orchestrator's context avoids leaking secrets and saves tokens.
+If the parsed summary has `credentials_ref` (= the path to `.testing.yml` when its `credentials:` block exists), record the **path only**. Do not `Read` the credentials values here — the test-executor will resolve them on demand for individual login steps. Keeping creds out of this orchestrator's context avoids leaking secrets and saves tokens.
 
 ### 5. Batched HITL for gaps
 
 Identify gaps from the summary + config:
-- destructive steps and no `auto_confirm_destructive` → confirmation policy needed
-- no `base_url` and no URL in the checklist → ask
-- credentials referenced but no resolvable path → ask
+- destructive steps and no `run.auto_confirm_destructive` → confirmation policy needed
+- no `web.base_url` and no URL in the checklist → ask
+- credentials referenced but no resolvable `.testing.yml` → ask
 
 If any gaps, call `AskUserQuestion` ONCE with all gaps batched. Skip if none.
 
 ### 6. Pre-run hooks
 
-If config has `pre_run`, execute each command via `Bash`. Stop on first failure with `RUN_FAILED pre_run hook: <name>`.
+If config has `run.pre`, execute each command via `Bash`. Stop on first failure with `RUN_FAILED pre_run hook: <name>`.
 
 ### 7. Init the run
 
@@ -104,7 +104,7 @@ Capture the executor's reply. If it returned `RUN_INCOMPLETE`, continue to the a
 
 ### 11. Post-run hooks
 
-If config has `post_run`, run each via `Bash`. Failures here are warnings, not fatal.
+If config has `run.post`, run each via `Bash`. Failures here are warnings, not fatal.
 
 ### 12. Audit
 

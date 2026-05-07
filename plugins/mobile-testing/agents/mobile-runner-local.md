@@ -22,7 +22,7 @@ PLUGIN_ROOT: /path/to/plugin
 PROJECT_ROOT: /path/to/project_under_test
 ```
 
-`PROJECT_ROOT` is the user's working directory — the runner reads `<project>/.mobile-testing.env` (and falls back to `<project>/.e2e-testing.env` for `LMSTUDIO_*` keys when the mobile file is absent or doesn't define them) and writes screenshots into `<project>/.mobile-test-screenshots/` unless `MOBILE_SCREENSHOT_DIR` is already set.
+`PROJECT_ROOT` is the user's working directory — the runner reads `<project>/.testing.yml` (the unified config file shared with e2e-testing) and writes screenshots into `<project>/.mobile-test-screenshots/` unless `MOBILE_SCREENSHOT_DIR` is already set.
 
 ## What you do (and only this)
 
@@ -32,7 +32,7 @@ PROJECT_ROOT: /path/to/project_under_test
    uv run --directory "${CLAUDE_PLUGIN_ROOT}" python scripts/mobile_local_runner.py \
        --check-config --project-root "${PROJECT_ROOT}"
    ```
-   Print the output verbatim. If the endpoint is unreachable, tell the user to start LM Studio (or set `LMSTUDIO_BASE_URL` in `<project>/.mobile-testing.env`) and **stop** — do not fall back to driving the device yourself.
+   Print the output verbatim. If the endpoint is unreachable, tell the user to start LM Studio (or set `lmstudio.base_url` in `<project>/.testing.yml`) and **stop** — do not fall back to driving the device yourself.
 3. **Ensure the `local` extra is installed:**
    ```bash
    uv sync --extra local --directory "${CLAUDE_PLUGIN_ROOT}"

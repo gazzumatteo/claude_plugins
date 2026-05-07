@@ -42,15 +42,15 @@ Classify the target:
 If ambiguous, call `AskUserQuestion` ONCE with up to 4 batched questions:
 
 - "What feature or flow should the checklist cover?" (options: extracted guesses + Other)
-- "Base URL for the environment under test?" (values from `.e2e-testing.yml` / `.env*` / README + Other + "skip")
-- "Are credentials needed?" (yes — path; no; later)
+- "Base URL for the environment under test?" (values from `.testing.yml` / README + Other + "skip")
+- "Are credentials needed?" (yes — list role names; no; later)
 - "Preferred shape?" (table / prose / nested / cli / "let the architect decide")
 
 Do not ask more than one batched round.
 
 ### 2. Per-project config
 
-`Glob` for `.e2e-testing.yml` near the target or at the repo root. If present, `Read` it (small) and note `base_url`, `credentials_file`, `browser`.
+`Glob` for `.testing.yml` at the repo root (or up the tree from the target). If present, `Read` it (small) and note `web.base_url`, `web.browser.engine`, and the role names under `credentials:`.
 
 ### 3. Delegate scenario design to `checklist-architect`
 
@@ -58,7 +58,7 @@ Do not ask more than one batched round.
 
 - The clarified target (path or description)
 - Repo root (absolute)
-- `base_url` / `credentials_file` / `browser` from the config
+- `base_url` / `browser` / `credential_roles` from the config
 - User answers from step 1
 - Requested shape (or "auto")
 - Strict output contract: the architect MUST save its JSON skeleton to `/tmp/e2e-skeleton-<ts>.json` and reply with one line: `SKELETON_READY <path>`.
@@ -82,7 +82,7 @@ Verify: `shape` ∈ {table, prose, nested, cli}, `n>0`, `placeholder=false`. If 
 - Absolute path to the skeleton JSON
 - Absolute path of the output file (resolve `--out` to absolute, or default)
 - The shape decided in step 4
-- `base_url` / `credentials_file` / `browser` for prereqs
+- `base_url` / `browser` / `credential_roles` for prereqs
 - Reminder: the file MUST parse as that shape — the writer calls the parser to verify and replies `WRITER_DONE <output-path>`.
 
 ### 6. Verify with the parser (lean)

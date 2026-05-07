@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "gazzumatteo-claude-plugins",
-  "version": "0.5.12",
+  "version": "0.6.0",
   "description": "Claude Code plugins and skills by Matteo Gazzurelli — testing, automation, and productivity tools for NQL and beyond",
   "owner": {
     "name": "Matteo Gazzurelli",
@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "e2e-testing",
-      "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright. Unifies cloud (Claude) and local (LM Studio) executors behind a single `/run-checklist` dispatcher that auto-routes based on $E2E_EXECUTOR. v0.5.4 adds an `e2e-vision` MCP server with `analyze_image(path, prompt)` so Claude can offload PNG analysis to LM Studio (~30 tokens vs ~1800 for inline Read). Structured markdown + JSON reports.",
-      "version": "0.5.5",
+      "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright. Unifies cloud (Claude) and local (LM Studio) executors behind a single `/run-checklist` dispatcher. v0.6.0 ships a single unified `.testing.yml` config (replaces `.e2e-testing.env` + `.e2e-testing.yml` + `TESTING_CREDENTIALS.md`) — same file is shared with mobile-testing. Includes the `e2e-vision` MCP server with `analyze_image(path, prompt)` to offload PNG analysis to LM Studio (~30 tokens vs ~1800 for inline Read). Structured markdown + JSON reports.",
+      "version": "0.6.0",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"
@@ -32,8 +32,8 @@
     },
     {
       "name": "mobile-testing",
-      "description": "Direct iOS Simulator and Android Emulator control without MobAI desktop app — zero rate limits. Pluggable backends: native (xcrun simctl + adb + Quartz) and Appium (XCUITest + UIAutomator2). v0.1.8 adds `analyze_screenshot` and `analyze_image` MCP tools so Claude can offload PNG analysis to LM Studio (~30 tokens vs ~1800 for inline Read). Single `/mobile-runner` dispatcher auto-routes cloud vs local based on $MOBILE_EXECUTOR. Same 14 device-control tools and DSL v0.2 as MobAI MCP.",
-      "version": "0.1.9",
+      "description": "Direct iOS Simulator and Android Emulator control without MobAI desktop app — zero rate limits. Pluggable backends: native (xcrun simctl + adb + Quartz) and Appium (XCUITest + UIAutomator2). v0.2.0 ships a single unified `.testing.yml` config (replaces `.mobile-testing.env`) — same file is shared with e2e-testing. Includes `analyze_screenshot` / `analyze_image` MCP tools to offload PNG analysis to LM Studio (~30 tokens vs ~1800 for inline Read). Single `/mobile-runner` dispatcher auto-routes cloud vs local. Same 14 device-control tools and DSL v0.2 as MobAI MCP.",
+      "version": "0.2.0",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"

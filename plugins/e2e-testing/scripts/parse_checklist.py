@@ -105,6 +105,20 @@ CHECKBOX_LINE_RE = re.compile(r"^\s*-\s*\[([ xX\-~])\]\s+(.+)$")
 # Utilities
 # ---------------------------------------------------------------------------
 
+_TABLE_PIPE_SPLIT_RE = re.compile(r"(?<!\\)\|")
+
+
+def split_table_row(line: str) -> list[str]:
+    """Split a markdown table row on `|`, respecting `\\|` escapes.
+
+    Naive `line.split("|")` truncates cells that contain escaped pipes (common in
+    bash one-liners with `curl ... | sudo bash`). We split on unescaped pipes only,
+    then unescape the surviving `\\|` back to `|` in each cell.
+    """
+    parts = _TABLE_PIPE_SPLIT_RE.split(line.strip("|"))
+    return [p.strip().replace(r"\|", "|") for p in parts]
+
+
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
@@ -137,7 +151,7 @@ def extract_prereqs(text: str) -> list[str]:
         if line.startswith("|") and set(line) <= {"|", "-", " ", ":"}:
             continue
         if line.startswith("|"):
-            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = split_table_row(line)
             joined = " — ".join(c for c in cells if c)
             if joined:
                 items.append(joined)
@@ -257,7 +271,7 @@ def parse_table(text: str) -> list[Step]:
         if line.strip().startswith("|"):
             header_line = line
             if i + 1 < len(lines) and re.match(r"^\s*\|[\s\|:\-]+\|\s*$", lines[i + 1]):
-                headers = [c.strip().lower() for c in header_line.strip().strip("|").split("|")]
+                headers = [c.lower() for c in split_table_row(header_line.strip())]
                 col = {h: idx for idx, h in enumerate(headers)}
                 pass_idx = next(
                     (col[k] for k in ("pass", "status", "stato") if k in col),
@@ -287,7 +301,7 @@ def parse_table(text: str) -> list[Step]:
                 j = i + 2
                 while j < len(lines) and lines[j].strip().startswith("|"):
                     row_line = lines[j].strip()
-                    cells = [c.strip() for c in row_line.strip("|").split("|")]
+                    cells = split_table_row(row_line)
                     if len(cells) >= 2 and cells[id_idx]:
                         step_id = cells[id_idx] or f"{len(steps) + 1}"
                         action = cells[action_idx] if action_idx < len(cells) else ""

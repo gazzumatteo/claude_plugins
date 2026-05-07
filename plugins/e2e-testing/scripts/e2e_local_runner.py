@@ -348,6 +348,69 @@ def b64_image(png: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(png).decode()}"}}
 
 
+STRICT_VERDICT_TIMEOUT_S = 30
+STRICT_VERDICT_MAX_TOKENS = 200
+
+STRICT_VERDICT_SYSTEM = (
+    "You are an independent verifier. You did NOT execute the test step — your only job is to "
+    "look at the screenshot and decide whether the EXPECTED outcome is visibly confirmed.\n"
+    "Reply with EXACTLY one of these words on the first line: YES, NO, UNCLEAR.\n"
+    "Then on a new line, one short sentence justifying your verdict (≤ 30 words).\n"
+    "  • YES = the screenshot clearly shows the expected outcome.\n"
+    "  • NO  = the screenshot clearly contradicts the expected outcome.\n"
+    "  • UNCLEAR = you cannot tell from this screenshot alone (loading, partial render, off-screen).\n"
+    "Be strict. 'Probably ok' is UNCLEAR, not YES."
+)
+
+
+def _strict_verify(client: OpenAI, model: str, screenshot: bytes | None,
+                   expected: str, action: str) -> tuple[str, str]:
+    """Independent post-pass verification. Returns (verdict, justification).
+
+    verdict ∈ {"YES", "NO", "UNCLEAR", "ERROR"}. ERROR means the verifier itself
+    failed (network / parse) — caller should preserve the original pass and log.
+    """
+    if not expected.strip():
+        return "UNCLEAR", "no EXPECTED text to verify against"
+    if screenshot is None:
+        return "UNCLEAR", "no fresh screenshot available"
+    user_text = (
+        f"ACTION the model just claimed to have completed: {action}\n"
+        f"EXPECTED outcome to verify: {expected}\n"
+        f"Reply YES / NO / UNCLEAR + one-line justification."
+    )
+    try:
+        rsp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": STRICT_VERDICT_SYSTEM},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user_text},
+                    b64_image(screenshot),
+                ]},
+            ],
+            temperature=0.0,
+            max_tokens=STRICT_VERDICT_MAX_TOKENS,
+            timeout=STRICT_VERDICT_TIMEOUT_S,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return "ERROR", f"verifier call failed: {type(exc).__name__}"
+    text = (rsp.choices[0].message.content or "").strip()
+    if not text:
+        return "ERROR", "verifier returned empty"
+    first = text.split("\n", 1)[0].strip().rstrip(".,:").upper()
+    rest = text.split("\n", 1)[1].strip() if "\n" in text else ""
+    if first not in ("YES", "NO", "UNCLEAR"):
+        # Sometimes the model embeds the keyword inside a sentence — try a substring scan.
+        for kw in ("YES", "NO", "UNCLEAR"):
+            if kw in first:
+                first = kw
+                break
+        else:
+            return "ERROR", f"verifier reply not parseable: {text[:80]}"
+    return first, rest or text[:120]
+
+
 def _format_auth_context(credentials: dict[str, dict[str, str]], base_url: str | None) -> str:
     """Build the credentials/base_url block injected into each step's system prompt.
 
@@ -392,6 +455,7 @@ def run_step(
     max_iterations: int,
     inject_error_on: str | None,
     auth_context: str = "",
+    strict_verdict: bool = False,
 ) -> StepResult:
     evidence = out_dir / f"step-{step['id']}"
     tools = BrowserTools(page, evidence, inject_error_on)
@@ -559,6 +623,31 @@ def run_step(
                 final_notes = args.get("notes", "") or ""
                 final_bugs = args.get("bugs") or []
                 tools._trace({"iter": iteration, "tool": "finish_step", "args": args})
+                # Strict-verdict: independent post-pass verification.
+                # Only runs when the model claims pass AND the run was started with strict
+                # mode. The verifier sees a fresh screenshot + the EXPECTED text only —
+                # zero memory of the iteration loop, so false-positive passes get caught.
+                if final_status == "pass" and strict_verdict:
+                    fresh_png = tools.take_screenshot()
+                    verdict, justification = _strict_verify(
+                        client, model, fresh_png,
+                        step.get("expected") or "",
+                        step.get("action") or "",
+                    )
+                    tools._trace({"iter": iteration, "strict_verdict": verdict, "reason": justification})
+                    if verdict == "NO":
+                        final_status = "fail"
+                        final_notes = (
+                            f"STRICT VERIFIER OVERRIDE: model claimed pass but verifier disagreed. "
+                            f"Verifier said: {justification}. Model notes: {final_notes}"
+                        )
+                    elif verdict == "UNCLEAR":
+                        final_status = "error"
+                        final_notes = (
+                            f"STRICT VERIFIER could not confirm pass. "
+                            f"Verifier said: {justification}. Model notes: {final_notes}"
+                        )
+                    # YES or ERROR (verifier itself failed) → keep original pass.
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": "step terminated"})
                 terminated = True
                 break
@@ -894,6 +983,10 @@ def main() -> int:
                             help="Tool name whose first invocation fails on step 2 (one-shot)")
     arg_parser.add_argument("--allow-destructive", action="store_true",
                             help="Run steps marked destructive (default: skip)")
+    arg_parser.add_argument("--strict-verdict", action="store_true", default=None,
+                            help="After every model-claimed pass, run an independent LM-Studio verifier "
+                                 "on a fresh screenshot. Downgrades to fail/error on disagreement. "
+                                 "Default: run.strict_verdict from .testing.yml (false if unset).")
     arg_parser.add_argument("--only", default=None,
                             help="Comma-separated step ids to run (e.g. '1.1,1.2,2.3'); "
                                  "everything else is skipped with reason 'filtered by --only'.")
@@ -921,6 +1014,9 @@ def main() -> int:
     # CLI override > YAML > 12-default for max_iterations.
     if args.max_iterations is None:
         args.max_iterations = settings.run.max_iterations
+    # CLI flag (--strict-verdict) > YAML (run.strict_verdict) > false default.
+    if args.strict_verdict is None:
+        args.strict_verdict = settings.run.strict_verdict
 
     if args.check_config:
         return cmd_check_config(project_root, settings)
@@ -988,7 +1084,7 @@ def main() -> int:
 
                     r = _execute_step(
                         p, browser, page, step, args, client, model, project_root, out_dir,
-                        auth_context,
+                        auth_context, args.strict_verdict,
                     )
                     # _execute_step may have lazy-launched the browser — pick up the handles.
                     browser, page = r.browser, r.page
@@ -1091,6 +1187,7 @@ def _execute_step(
     project_root: Path,
     out_dir: Path,
     auth_context: str = "",
+    strict_verdict: bool = False,
 ) -> _ExecutedStep:
     """Run one step with full crash containment. Any unhandled exception becomes a
     StepResult(status='error', error=traceback) so the for-loop never aborts and
@@ -1117,7 +1214,7 @@ def _execute_step(
         inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
         print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
         cleanup_page_state(page)
-        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj, auth_context)
+        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj, auth_context, strict_verdict)
         return _ExecutedStep(r, browser, page)
     except Exception as exc:  # noqa: BLE001
         evidence = out_dir / f"step-{step['id']}"

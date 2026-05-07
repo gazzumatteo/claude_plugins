@@ -109,6 +109,7 @@ class Mobile:
 class Run:
     auto_confirm_destructive: bool = False
     max_iterations: int = 12
+    strict_verdict: bool = False
     pre: list[str] = field(default_factory=list)
     post: list[str] = field(default_factory=list)
 
@@ -238,6 +239,7 @@ def _from_dict(d: dict, source: Path) -> Settings:
         run=Run(
             auto_confirm_destructive=bool(run_d.get("auto_confirm_destructive", False)),
             max_iterations=int(run_d.get("max_iterations", 12)),
+            strict_verdict=bool(run_d.get("strict_verdict", False)),
             pre=[str(s) for s in (run_d.get("pre") or [])],
             post=[str(s) for s in (run_d.get("post") or [])],
         ),

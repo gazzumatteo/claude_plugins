@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "gazzumatteo-claude-plugins",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Claude Code plugins and skills by Matteo Gazzurelli — testing, automation, and productivity tools for NQL and beyond",
   "owner": {
     "name": "Matteo Gazzurelli",
@@ -11,7 +11,7 @@
     {
       "name": "e2e-testing",
       "description": "End-to-end testing workflow: create checklists from code, validate them against changes, and execute via Playwright. Unifies cloud (Claude) and local (LM Studio) executors behind a single `/run-checklist` dispatcher. v0.6.0 ships a single unified `.testing.yml` config (replaces `.e2e-testing.env` + `.e2e-testing.yml` + `TESTING_CREDENTIALS.md`) — same file is shared with mobile-testing. Includes the `e2e-vision` MCP server with `analyze_image(path, prompt)` to offload PNG analysis to LM Studio (~30 tokens vs ~1800 for inline Read). Structured markdown + JSON reports.",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "author": {
         "name": "Matteo Gazzurelli",
         "email": "matteo@gazzurelli.com"

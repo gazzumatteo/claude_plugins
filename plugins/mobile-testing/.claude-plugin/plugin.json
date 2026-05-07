@@ -1,6 +1,6 @@
 {
   "name": "mobile-testing",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Direct iOS Simulator and Android Emulator control without MobAI desktop app — zero rate limits. Pluggable backends: native (xcrun simctl + adb) and Appium (XCUITest + UIAutomator2). Drop-in replacement for MobAI MCP.",
   "author": {
     "name": "Matteo Gazzurelli",

@@ -17,10 +17,17 @@ Claude Code was launched from, which is typically the user's project root.
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 from typing import Union
 
-from .config import ConfigError, Settings
+from .config import (
+    DEFAULT_LMSTUDIO_API_KEY,
+    DEFAULT_LMSTUDIO_BASE_URL,
+    DEFAULT_LMSTUDIO_MODEL,
+    ConfigError,
+    Settings,
+)
 
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TIMEOUT_S = 60
@@ -59,9 +66,11 @@ def analyze_with_lmstudio(
         data = image
     b64 = base64.b64encode(data).decode("ascii")
 
-    base_url = settings.lmstudio.base_url
-    model = settings.lmstudio.model
-    api_key = settings.lmstudio.api_key
+    # Read from env AFTER apply_lmstudio_env() so that process-env vars (from
+    # mcp.json or the shell) beat yaml defaults — same pattern as mobile_local_runner.py.
+    base_url = os.environ.get("LMSTUDIO_BASE_URL", DEFAULT_LMSTUDIO_BASE_URL)
+    model = os.environ.get("LMSTUDIO_MODEL", DEFAULT_LMSTUDIO_MODEL)
+    api_key = os.environ.get("LMSTUDIO_API_KEY", DEFAULT_LMSTUDIO_API_KEY)
 
     client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout_s)
     try:

@@ -42,7 +42,7 @@ from mcp.server.fastmcp import FastMCP
 sys.path.insert(0, str(Path(__file__).parent))
 from config import ConfigError, Settings  # noqa: E402
 
-DEFAULT_MAX_TOKENS = 512
+DEFAULT_MAX_TOKENS = 8000  # generous: reasoning models (Qwen3-thinking, R1) need headroom
 DEFAULT_TIMEOUT_S = 60
 
 mcp = FastMCP("e2e-vision")

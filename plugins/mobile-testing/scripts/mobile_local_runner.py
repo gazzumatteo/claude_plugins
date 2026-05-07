@@ -430,6 +430,7 @@ def run_step(
     out_dir: Path,
     max_iterations: int,
     auth_context: str = "",
+    max_tokens: int = 8000,
 ) -> StepResult:
     evidence = out_dir / f"step-{step['id']}"
     tools = MobileTools(backend, device_id, evidence)
@@ -484,7 +485,7 @@ def run_step(
         try:
             rsp = client.chat.completions.create(
                 model=model, messages=messages, tools=TOOL_SCHEMAS,
-                tool_choice="auto", temperature=0.0, max_tokens=1024,
+                tool_choice="auto", temperature=0.0, max_tokens=max_tokens,
             )
         except Exception as exc:  # noqa: BLE001
             error = f"chat.completions failed: {exc!s}"
@@ -747,7 +748,7 @@ def main() -> int:
     for step in steps:
         print(f"  ▶ step {step['id']}: {step['action'][:80]}")
         try:
-            r = run_step(client, model, backend, args.device_id, step, out_dir, args.max_iterations, auth_context)
+            r = run_step(client, model, backend, args.device_id, step, out_dir, args.max_iterations, auth_context, settings.lmstudio.max_tokens)
         except Exception as exc:  # noqa: BLE001
             tb = traceback.format_exc()
             (out_dir / f"step-{step['id']}-crash.txt").write_text(tb)

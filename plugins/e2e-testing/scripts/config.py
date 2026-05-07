@@ -78,6 +78,12 @@ class LMStudio:
     base_url: str = DEFAULT_LMSTUDIO_BASE_URL
     model: str = DEFAULT_LMSTUDIO_MODEL
     api_key: str = DEFAULT_LMSTUDIO_API_KEY
+    # Output budget per LM-Studio call. 8000 leaves comfortable headroom for
+    # reasoning models (Qwen3-thinking, DeepSeek-R1, ...) that spend most tokens
+    # on hidden reasoning before emitting tool_calls / content. Non-reasoning
+    # models stop earlier at finish_step — the extra headroom is harmless.
+    # Note: this is the OUTPUT cap, separate from the model's context window.
+    max_tokens: int = 8000
 
 
 @dataclass
@@ -235,6 +241,7 @@ def _from_dict(d: dict, source: Path) -> Settings:
             base_url=lm_d.get("base_url") or DEFAULT_LMSTUDIO_BASE_URL,
             model=lm_d.get("model") or DEFAULT_LMSTUDIO_MODEL,
             api_key=lm_d.get("api_key") or DEFAULT_LMSTUDIO_API_KEY,
+            max_tokens=int(lm_d.get("max_tokens", 8000)),
         ),
         run=Run(
             auto_confirm_destructive=bool(run_d.get("auto_confirm_destructive", False)),

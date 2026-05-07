@@ -348,8 +348,7 @@ def b64_image(png: bytes) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(png).decode()}"}}
 
 
-STRICT_VERDICT_TIMEOUT_S = 30
-STRICT_VERDICT_MAX_TOKENS = 200
+STRICT_VERDICT_TIMEOUT_S = 60
 
 STRICT_VERDICT_SYSTEM = (
     "You are an independent verifier. You did NOT execute the test step — your only job is to "
@@ -364,7 +363,7 @@ STRICT_VERDICT_SYSTEM = (
 
 
 def _strict_verify(client: OpenAI, model: str, screenshot: bytes | None,
-                   expected: str, action: str) -> tuple[str, str]:
+                   expected: str, action: str, max_tokens: int) -> tuple[str, str]:
     """Independent post-pass verification. Returns (verdict, justification).
 
     verdict ∈ {"YES", "NO", "UNCLEAR", "ERROR"}. ERROR means the verifier itself
@@ -390,7 +389,7 @@ def _strict_verify(client: OpenAI, model: str, screenshot: bytes | None,
                 ]},
             ],
             temperature=0.0,
-            max_tokens=STRICT_VERDICT_MAX_TOKENS,
+            max_tokens=max_tokens,
             timeout=STRICT_VERDICT_TIMEOUT_S,
         )
     except Exception as exc:  # noqa: BLE001
@@ -456,6 +455,7 @@ def run_step(
     inject_error_on: str | None,
     auth_context: str = "",
     strict_verdict: bool = False,
+    max_tokens: int = 8000,
 ) -> StepResult:
     evidence = out_dir / f"step-{step['id']}"
     tools = BrowserTools(page, evidence, inject_error_on)
@@ -529,7 +529,7 @@ def run_step(
                 tools=TOOL_SCHEMAS,
                 tool_choice="auto",
                 temperature=0.0,
-                max_tokens=1024,
+                max_tokens=max_tokens,
             )
         except Exception as exc:  # noqa: BLE001
             error = f"chat.completions failed: {exc!s}"
@@ -633,6 +633,7 @@ def run_step(
                         client, model, fresh_png,
                         step.get("expected") or "",
                         step.get("action") or "",
+                        max_tokens,
                     )
                     tools._trace({"iter": iteration, "strict_verdict": verdict, "reason": justification})
                     if verdict == "NO":
@@ -770,6 +771,7 @@ def run_cli_only_step(
     project_root: Path,
     out_dir: Path,
     auth_context: str = "",
+    max_tokens: int = 8000,
 ) -> StepResult:
     """Execute a pure-CLI step: run cli_commands as subprocesses, then ask the model
     in a single turn whether the transcript matches the expected outcome.
@@ -854,7 +856,7 @@ def run_cli_only_step(
             tools=[finish_tool],
             tool_choice="auto",
             temperature=0.0,
-            max_tokens=600,
+            max_tokens=max_tokens,
         )
     except Exception as exc:  # noqa: BLE001
         error = f"chat.completions failed: {exc}"
@@ -1084,7 +1086,7 @@ def main() -> int:
 
                     r = _execute_step(
                         p, browser, page, step, args, client, model, project_root, out_dir,
-                        auth_context, args.strict_verdict,
+                        auth_context, args.strict_verdict, settings.lmstudio.max_tokens,
                     )
                     # _execute_step may have lazy-launched the browser — pick up the handles.
                     browser, page = r.browser, r.page
@@ -1188,6 +1190,7 @@ def _execute_step(
     out_dir: Path,
     auth_context: str = "",
     strict_verdict: bool = False,
+    max_tokens: int = 8000,
 ) -> _ExecutedStep:
     """Run one step with full crash containment. Any unhandled exception becomes a
     StepResult(status='error', error=traceback) so the for-loop never aborts and
@@ -1202,7 +1205,7 @@ def _execute_step(
 
         if step.get("needs_cli") and not step.get("needs_browser"):
             print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")
-            r = run_cli_only_step(client, model, step, project_root, out_dir, auth_context)
+            r = run_cli_only_step(client, model, step, project_root, out_dir, auth_context, max_tokens)
             return _ExecutedStep(r, browser, page)
 
         # Browser path — lazy-launch Chromium on first browser step.
@@ -1214,7 +1217,7 @@ def _execute_step(
         inj = args.inject_error if (args.inject_error and step["id"] == "2") else None
         print(f"\n--- Step {step['id']} [{step.get('section', '')}]: {step['action'][:80]}")
         cleanup_page_state(page)
-        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj, auth_context, strict_verdict)
+        r = run_step(client, model, page, step, out_dir, args.max_iterations, inj, auth_context, strict_verdict, max_tokens)
         return _ExecutedStep(r, browser, page)
     except Exception as exc:  # noqa: BLE001
         evidence = out_dir / f"step-{step['id']}"

@@ -439,6 +439,8 @@ def run_step(
     error: str | None = None
     last_call_signature: str | None = None
     repeated_call_count = 0
+    empty_recovery_used = False
+    loop_recovery_used = False
 
     for iteration in range(max_iterations):
         iterations_used = iteration + 1
@@ -466,6 +468,21 @@ def run_step(
         })
 
         if not tool_calls:
+            # C — empty-response recovery: one explicit nudge before failing.
+            if not empty_recovery_used and not (msg.content or "").strip():
+                empty_recovery_used = True
+                tools._trace({"iter": iteration, "empty_recovery": "nudging once"})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You returned no tool call and no content. You MUST emit one of:\n"
+                        "  • finish_step('pass') if the EXPECTED outcome already holds,\n"
+                        "  • finish_step('fail', notes=...) if you cannot complete the step,\n"
+                        "  • exactly one progress tool call (click / type / accessibility_snapshot / ...).\n"
+                        "Do not respond with empty content again."
+                    ),
+                })
+                continue
             final_status = "fail"
             final_notes = msg.content or "(no tool call and no content)"
             break
@@ -480,11 +497,30 @@ def run_step(
                 repeated_call_count = 1
                 last_call_signature = signature
             if repeated_call_count >= LOOP_GUARD_THRESHOLD:
+                # B — loop-guard recovery: one nudge to switch strategy before failing.
+                if not loop_recovery_used:
+                    loop_recovery_used = True
+                    tools._trace({"iter": iteration, "loop_recovery": "nudging once", "signature": signature})
+                    repeated_call_count = 0
+                    last_call_signature = None
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Your last {LOOP_GUARD_THRESHOLD} `{first_call.function.name}` calls used "
+                            f"identical arguments and made no progress. The selector you tried likely "
+                            f"does not match the right element. Switch strategy now:\n"
+                            f"  • Call `accessibility_snapshot` to see the actual element tree, OR\n"
+                            f"  • Try a more specific selector (different role/text/aria-label), OR\n"
+                            f"  • Call finish_step('fail', notes=...) explaining what you couldn't find.\n"
+                            f"Do NOT repeat the same arguments again."
+                        ),
+                    })
+                    continue
                 tools._trace({"iter": iteration, "loop_guard_triggered": signature, "count": repeated_call_count})
                 final_status = "fail"
                 final_notes = (
                     f"loop guard: identical {first_call.function.name} call repeated "
-                    f"{repeated_call_count}× without progress — auto-failed instead of looping."
+                    f"{repeated_call_count}× without progress (after one recovery attempt) — auto-failed instead of looping."
                 )
                 break
 
@@ -816,17 +852,12 @@ def cmd_check_config(project_root: Path, settings: Settings) -> int:
     print(f"  lmstudio.api_key  = {'***set***' if settings.lmstudio.api_key and settings.lmstudio.api_key != DEFAULT_API_KEY else '(default)'}")
     print(f"  credentials       = {sorted(settings.credentials.keys()) if settings.credentials else '(none)'}")
     print()
-    is_default_endpoint = settings.lmstudio.base_url == DEFAULT_BASE_URL
-    ok = settings.source_path is not None and not is_default_endpoint
+    ok = settings.source_path is not None
     print(f"config_status={'ok' if ok else 'incomplete'}")
     if not ok:
         print()
-        if settings.source_path is None:
-            print(f"To fix: create {project_root / CONFIG_FILENAME}")
-            print(f"  See plugins/e2e-testing/scripts/config.py for the schema.")
-        else:
-            print(f"To fix: set lmstudio.base_url in {settings.source_path}")
-            print("  (currently using the loopback default — won't reach a real LM Studio).")
+        print(f"To fix: create {project_root / CONFIG_FILENAME}")
+        print("  See plugins/e2e-testing/scripts/config.py for the schema.")
     return 0 if ok else 2
 
 
@@ -844,7 +875,8 @@ def main() -> int:
                             help="Print the resolved .testing.yml config and exit (rc=0 ok, 2 incomplete).")
     arg_parser.add_argument("--headed", action="store_true",
                             help="Show the browser window. ORs with web.browser.headed in .testing.yml.")
-    arg_parser.add_argument("--max-iterations", type=int, default=8)
+    arg_parser.add_argument("--max-iterations", type=int, default=None,
+                            help="Max model iterations per browser step. Default: run.max_iterations from .testing.yml (12 if unset).")
     arg_parser.add_argument("--inject-error", default=None,
                             help="Tool name whose first invocation fails on step 2 (one-shot)")
     arg_parser.add_argument("--allow-destructive", action="store_true",
@@ -873,6 +905,9 @@ def main() -> int:
     # Same for run.auto_confirm_destructive: YAML true ORs with the CLI flag.
     if settings.run.auto_confirm_destructive:
         args.allow_destructive = True
+    # CLI override > YAML > 12-default for max_iterations.
+    if args.max_iterations is None:
+        args.max_iterations = settings.run.max_iterations
 
     if args.check_config:
         return cmd_check_config(project_root, settings)

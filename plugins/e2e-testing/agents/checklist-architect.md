@@ -79,9 +79,17 @@ You do NOT decide: the final markdown formatting (that's the writer).
 
 ## Rules
 
-1. **Every step must be observable.** The `expected` field must be something a human or a browser can verify: text appears, HTTP status, file exists, row count. "Works correctly" is not observable — rewrite.
+1. **Every step must be observable AND have a non-empty `expected`.** The `expected` field is mandatory — it is what the local runner uses as the EXPECTED outcome and what the cloud test-executor compares against. "Works correctly" is not observable — rewrite. An empty/missing `expected` is the #1 cause of `max_iterations exhausted` failures because the model has no termination criterion.
 
-2. **One assertion per step.** Do not pack "user logs in AND sees dashboard AND can edit profile" into a single step. Split.
+2. **`action` text must be ≥ 30 chars and self-contained.** The action is what the runner sees as ACTION. Bad: `"Toggle ON"`. Good: `"On the Utility page, click the toggle next to 'OCR' to enable the skill"`. Bad: `"Click bottone verde"`. Good: `"Click the green 'Provisiona' button at the bottom of the form"`. The action must include the page/section context AND the specific element identifier.
+
+3. **CLI steps require fenced commands.** When `needs_cli: true`, you MUST populate `cli_commands` with the exact shell commands. The writer wraps them in ```bash blocks; if `cli_commands` is empty the parser produces zero commands at runtime and the runner fails the step before the model is even called. For HTTP checks: emit `curl -fsS https://.../api/health`, not `"GET /api/health"`.
+
+4. **No vague verbs without concrete expected.** Verbs like `verifica`, `controlla`, `check`, `validate`, `guarda`, `vedi` are placeholders. If you start an action with one, the `expected` must specify the exact thing to look for ("expected: the badge in the header reads 'v3.6.2'") — otherwise rewrite the action to be a concrete instruction ("Open Settings → click 'About' → read the version line").
+
+5. **No generic click targets.** Do not write `"Click 'Esci'"` or `"Click 'OK'"` alone — those texts often appear multiple times in the DOM. Always disambiguate: `"Click 'Esci' in the user dropdown menu (top-right)"`. The runner's loop guard auto-fails when the model clicks the same wrong element 3× in a row.
+
+6. **One assertion per step.** Do not pack "user logs in AND sees dashboard AND can edit profile" into a single step. Split.
 
 3. **Cover the happy path first, then edge cases.** Ordering matters: auth → read → write → destructive → cleanup.
 

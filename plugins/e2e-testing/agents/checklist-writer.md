@@ -47,6 +47,22 @@ Nothing else. No preamble, no trailing prose. The orchestrator re-runs the parse
 4. Use Italian for the meta section headings (`Prerequisiti`, `Credenziali`, `Legenda`) since the project convention is IT — but step text stays in whatever language the skeleton used.
 5. Destructive steps MUST keep the destructive keywords in the action text (the parser uses regex). Do NOT rephrase "Elimina utente" as "Rimuovi utente permanentemente" and then drop the keyword.
 6. Every step action gets a concrete verb + object. Not "Check the thing". Yes "Click the 'Accedi' button and verify the dashboard loads".
+7. **`Azione` text MUST be ≥ 30 chars and self-contained** — include page/section context AND the specific element. Bad: `"Toggle ON"`. Good: `"On the Utility page, click the toggle next to 'OCR'"`.
+8. **`Risultato Atteso` MUST be non-empty for every step.** It's what the local runner compares against; empty cells force the model to guess termination and cause `max_iterations exhausted`. If the architect skeleton has empty `expected`, fill it with the concrete observable from the action context (e.g. for "Click 'Salva'" → "Toast 'Salvato' appears for ~3s and the form returns to read-only mode").
+9. **CLI commands MUST be inside ```bash fences.** When a step has `cli_commands` in the skeleton, render them in a fenced bash block inside the row/section body. Do NOT inline backtick `curl ...` snippets in the Azione text — the parser only extracts commands from ```bash / ```sh / ```shell / ```zsh / no-tag fences.
+10. **Avoid generic click targets in isolation.** Don't write `"Click 'Esci'"` or `"Click 'OK'"` alone — disambiguate the target with surrounding context.
+
+## Self-validation before declaring done
+
+After writing the file and running the parser check (see "Final reply" below), you MUST also run the lint script and report findings to the orchestrator:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint_checklist.py <output-path> --json
+```
+
+Exit code `0` = no findings (clean). Exit code `1` = at least one step failed a quality rule. Either way, capture the JSON and include `lint_findings_count` in your reply. If the count is > 0, list the top tag and the count of steps affected so the orchestrator can decide whether to ask the user to revise.
+
+You DO NOT silently emit a checklist with lint findings — surface them.
 
 ## Shape-specific rules
 

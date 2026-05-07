@@ -40,6 +40,7 @@ Produce a JSON audit report classifying every potential change into one of four 
     "obsolete_count": 5,
     "missing_count": 4,
     "ambiguous_count": 3,
+    "quality_findings_count": 245,
     "overall_confidence": "high | medium | low"
   },
   "obsolete": [
@@ -93,6 +94,11 @@ Produce a JSON audit report classifying every potential change into one of four 
       "suggested_fix": "Replace with https://staging.example.com"
     }
   ],
+  "quality_lint": {
+    "report_path": "/tmp/e2e-validate-lint-<ts>.json",
+    "total_findings": 0,
+    "by_tag": {}
+  },
   "notes_from_memory": "string — one paragraph summarizing what claude-mem knew about this checklist/feature, or 'no memory available'",
   "error": null
 }
@@ -150,7 +156,29 @@ For every prereq and config value (URLs, credential paths, docker service names)
 
 Flag issues; suggest fixes.
 
-### Step 6 — incorporate memory
+### Step 6 — runner-quality lint (mandatory)
+
+Run the lint script against the checklist to surface step-quality issues that cause local-runner failures:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint_checklist.py <checklist.md path> --json > /tmp/e2e-validate-lint-<ts>.json
+```
+
+The script flags steps with: missing `expected`, action text < 30 chars, vague verbs without expected, CLI steps without fenced commands, generic click targets. These are NOT obsolete or missing — they are **quality** issues that hurt the run pass-rate.
+
+Add to your audit JSON:
+
+```json
+"quality_lint": {
+  "report_path": "/tmp/e2e-validate-lint-<ts>.json",
+  "total_findings": 245,
+  "by_tag": {"action-too-short": 149, "cli-no-commands": 88, ...}
+}
+```
+
+The orchestrator surfaces this to the user with one summary line plus the report path. Do NOT add lint findings to `obsolete` / `missing` / `ambiguous` — they are a separate concern.
+
+### Step 7 — incorporate memory
 
 Use the `mcp__plugin_claude-mem_mcp-search__search` tool directly if the orchestrator told you memory is available but did not provide notes. Run 1–3 targeted queries: checklist title, feature name, "e2e" + section name. Use `smart_search` only if a result deserves expansion.
 

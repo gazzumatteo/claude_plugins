@@ -467,6 +467,8 @@ def run_step(
     error: str | None = None
     last_signature: str | None = None
     repeat = 0
+    empty_recovery_used = False
+    loop_recovery_used = False
 
     for it in range(max_iterations):
         iterations_used = it + 1
@@ -489,6 +491,21 @@ def run_step(
         })
 
         if not tool_calls:
+            # C — empty-response recovery: one explicit nudge before failing.
+            if not empty_recovery_used and not (msg.content or "").strip():
+                empty_recovery_used = True
+                tools._trace({"iter": it, "empty_recovery": "nudging once"})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You returned no tool call and no content. You MUST emit one of:\n"
+                        "  • finish_step('pass') if the EXPECTED outcome already holds,\n"
+                        "  • finish_step('fail', notes=...) if you cannot complete the step,\n"
+                        "  • exactly one progress tool call (tap / type / observe / ...).\n"
+                        "Do not respond with empty content again."
+                    ),
+                })
+                continue
             final_status = "fail"
             final_notes = msg.content or "(no tool call and no content)"
             break
@@ -502,11 +519,30 @@ def run_step(
                 repeat = 1
                 last_signature = sig
             if repeat >= LOOP_GUARD_THRESHOLD:
+                # B — loop-guard recovery: one nudge to switch strategy before failing.
+                if not loop_recovery_used:
+                    loop_recovery_used = True
+                    tools._trace({"iter": it, "loop_recovery": "nudging once", "signature": sig})
+                    repeat = 0
+                    last_signature = None
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"Your last {LOOP_GUARD_THRESHOLD} `{first.function.name}` calls used "
+                            f"identical arguments and made no progress. The selector likely does not "
+                            f"match the right element. Switch strategy now:\n"
+                            f"  • Call `observe` to see the current ui_tree, OR\n"
+                            f"  • Try a different selector (different text/accessibility id), OR\n"
+                            f"  • Call finish_step('fail', notes=...) explaining what you couldn't find.\n"
+                            f"Do NOT repeat the same arguments again."
+                        ),
+                    })
+                    continue
                 tools._trace({"iter": it, "loop_guard": sig, "count": repeat})
                 final_status = "fail"
                 final_notes = (
                     f"loop guard: identical {first.function.name} call repeated "
-                    f"{repeat}× without progress."
+                    f"{repeat}× without progress (after one recovery attempt)."
                 )
                 break
 
@@ -633,7 +669,8 @@ def main() -> int:
     p.add_argument("--checklist", type=Path, help="Path to a markdown checklist")
     p.add_argument("--device-id", type=str, help="Device ID (UDID/serial). Required when --checklist is given.")
     p.add_argument("--out-dir", type=Path, help="Output directory for evidence + report.json")
-    p.add_argument("--max-iterations", type=int, default=DEFAULT_MAX_ITERATIONS)
+    p.add_argument("--max-iterations", type=int, default=None,
+                   help="Max model iterations per step. Default: run.max_iterations from .testing.yml (12 if unset).")
     p.add_argument("--project-root", type=Path, default=Path.cwd())
     p.add_argument("--check-config", action="store_true")
     p.add_argument("--parse-only", action="store_true",
@@ -647,6 +684,8 @@ def main() -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     settings.apply_lmstudio_env()
+    if args.max_iterations is None:
+        args.max_iterations = settings.run.max_iterations
 
     if args.check_config:
         return cmd_check_config(project_root, settings)

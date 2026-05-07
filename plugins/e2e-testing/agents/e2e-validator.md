@@ -94,9 +94,12 @@ jq '{
   obsolete_n: (.obsolete|length),
   missing_n: (.missing|length),
   ambiguous: [.ambiguous[] | {step_id, title, suggestion}],
-  high_conf: [.obsolete[],.missing[] | select(.confidence=="high") | {step_id, op, why}]
+  high_conf: [.obsolete[],.missing[] | select(.confidence=="high") | {step_id, op, why}],
+  quality_lint: .quality_lint
 }' /tmp/e2e-validate-audit-<ts>.json
 ```
+
+The `quality_lint` block reports runner-quality issues (vague actions, missing expected, unfenced CLI commands, etc.). Do NOT raise an `AskUserQuestion` per finding — there can be hundreds. Surface only the aggregate count + top tags in the final reply, with the path to the lint JSON for the user to inspect.
 
 For every ambiguous item and any non-obvious missing item, batch into a single `AskUserQuestion` call (up to 4 per batch; if more, ask top 4, apply, then ask next batch). Each question offers:
 
@@ -162,6 +165,10 @@ Steps:  <before> → <after>
   - Removed:  N
   - Updated:  N
   - Unchanged: N
+
+Quality lint: <total_findings> step(s) flagged
+  - Top tag: <tag> (<count>)
+  - Full report: <quality_lint.report_path>
 
 Audit report: /tmp/e2e-validate-audit-<ts>.json
 

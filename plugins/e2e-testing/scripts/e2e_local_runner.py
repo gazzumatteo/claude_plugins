@@ -366,6 +366,19 @@ def _format_auth_context(credentials: dict[str, dict[str, str]], base_url: str |
             email = fields.get("email", "")
             password = fields.get("password", "")
             lines.append(f"  - {role}: email={email}, password={password}")
+        # Auto-recovery: previous steps may have logged out, navigated away, or left the
+        # session in an unexpected state. The runner does NOT auto-bootstrap between steps,
+        # so the model has to handle this itself.
+        lines.extend([
+            "",
+            "SESSION AUTO-RECOVERY (important for reliable runs):",
+            "  • If at the START of a step you see a login screen instead of the expected page,",
+            "    log in as 'admin' FIRST using the credentials above, THEN continue with the step.",
+            "    Treat that login as setup — do NOT call finish_step('pass') after the login alone.",
+            "  • If the step asks you to navigate somewhere protected and you land on the login",
+            "    page, same rule: log in, then re-attempt the navigation.",
+            "  • Do this transparently — it is not a test failure, it is recovering from prior-step state.",
+        ])
         parts.append("\n".join(lines))
     return "\n".join(parts)
 

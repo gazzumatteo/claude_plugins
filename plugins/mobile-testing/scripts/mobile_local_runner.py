@@ -410,6 +410,14 @@ def _format_auth_context(credentials: dict[str, dict[str, str]]) -> str:
         email = fields.get("email", "")
         password = fields.get("password", "")
         lines.append(f"  - {role}: email={email}, password={password}")
+    lines.extend([
+        "",
+        "SESSION AUTO-RECOVERY (important for reliable runs):",
+        "  • If at the START of a step you see a login screen instead of the expected screen,",
+        "    log in as 'admin' FIRST using the credentials above, THEN continue with the step.",
+        "    Treat that login as setup — do NOT call finish_step('pass') after the login alone.",
+        "  • Do this transparently — it is not a test failure, it is recovering from prior-step state.",
+    ])
     return "\n".join(lines)
 
 

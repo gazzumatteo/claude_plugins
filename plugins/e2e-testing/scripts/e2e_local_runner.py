@@ -37,6 +37,7 @@ import base64
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 import traceback
@@ -408,6 +409,37 @@ def _strict_verify(client: OpenAI, model: str, screenshot: bytes | None,
         else:
             return "ERROR", f"verifier reply not parseable: {text[:80]}"
     return first, rest or text[:120]
+
+
+_STEP_VAR_RX = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
+
+
+def _substitute_step_vars(text: str, var_map: dict[str, str]) -> str:
+    """Replace `${VAR}` placeholders in step text with values from var_map.
+
+    Lets the checklist stay generic — `${BASE_URL}` etc. resolve to the values
+    in `.testing.yml` at run time. Unknown vars are left as-is so a typo in
+    the checklist is visible to the model (not silently blanked).
+    """
+    if not text or "${" not in text:
+        return text
+    return _STEP_VAR_RX.sub(lambda m: var_map.get(m.group(1), m.group(0)), text)
+
+
+def _resolve_step(step: dict[str, Any], var_map: dict[str, str]) -> dict[str, Any]:
+    """Return a shallow copy of `step` with `${VAR}` substituted in text fields.
+
+    Substitutes action, expected, and each cli_command. Other fields untouched.
+    """
+    if not var_map:
+        return step
+    out = dict(step)
+    out["action"] = _substitute_step_vars(step.get("action", ""), var_map)
+    out["expected"] = _substitute_step_vars(step.get("expected", ""), var_map)
+    cli = step.get("cli_commands") or []
+    if cli:
+        out["cli_commands"] = [_substitute_step_vars(c, var_map) for c in cli]
+    return out
 
 
 def _format_auth_context(credentials: dict[str, dict[str, str]], base_url: str | None) -> str:
@@ -1087,6 +1119,7 @@ def main() -> int:
                     r = _execute_step(
                         p, browser, page, step, args, client, model, project_root, out_dir,
                         auth_context, args.strict_verdict, settings.lmstudio.max_tokens,
+                        var_map=settings.step_var_map(),
                     )
                     # _execute_step may have lazy-launched the browser — pick up the handles.
                     browser, page = r.browser, r.page
@@ -1191,6 +1224,7 @@ def _execute_step(
     auth_context: str = "",
     strict_verdict: bool = False,
     max_tokens: int = 8000,
+    var_map: dict[str, str] | None = None,
 ) -> _ExecutedStep:
     """Run one step with full crash containment. Any unhandled exception becomes a
     StepResult(status='error', error=traceback) so the for-loop never aborts and
@@ -1202,6 +1236,10 @@ def _execute_step(
                 make_skipped(step, "destructive — skipped (use --allow-destructive)"),
                 browser, page,
             )
+
+        # Resolve `${VAR}` placeholders (BASE_URL, ADMIN_EMAIL, SSH_HOST, ...) once
+        # so action/expected/cli_commands all see the substituted values downstream.
+        step = _resolve_step(step, var_map or {})
 
         if step.get("needs_cli") and not step.get("needs_browser"):
             print(f"\n--- Step {step['id']} [{step.get('section', '')}] (CLI): {step['action'][:80]}")

@@ -112,6 +112,19 @@ class Mobile:
 
 
 @dataclass
+class SSH:
+    """SSH access info for steps that need to log into the server under test.
+
+    Used for step-text substitution (`${SSH_HOST}`, `${SSH_USER}`) so the
+    checklist itself stays generic — host and user live in `.testing.yml`,
+    not in the markdown.
+    """
+    host: str | None = None
+    user: str | None = None
+    key_path: str | None = None  # optional, for `-i <path>` SSH arg
+
+
+@dataclass
 class Run:
     auto_confirm_destructive: bool = False
     max_iterations: int = 12
@@ -125,10 +138,30 @@ class Settings:
     executor: str = "cloud"
     web: Web = field(default_factory=Web)
     mobile: Mobile = field(default_factory=Mobile)
+    ssh: SSH = field(default_factory=SSH)
     lmstudio: LMStudio = field(default_factory=LMStudio)
     run: Run = field(default_factory=Run)
     credentials: dict[str, dict[str, str]] = field(default_factory=dict)
     source_path: Path | None = None
+
+    def step_var_map(self) -> dict[str, str]:
+        """Return the `${VAR}` substitution map applied to action/expected text
+        before the model sees them. Lets the checklist stay generic — the env
+        details (URL, SSH host, role passwords) live in `.testing.yml`.
+
+        Empty/None values are preserved as empty strings so unset vars become
+        visible blanks rather than literal `${VAR}` strings.
+        """
+        out: dict[str, str] = {
+            "BASE_URL": self.web.base_url or "",
+            "SSH_HOST": self.ssh.host or "",
+            "SSH_USER": self.ssh.user or "",
+        }
+        for role, fields in self.credentials.items():
+            ru = role.upper()
+            out[f"{ru}_EMAIL"] = fields.get("email", "")
+            out[f"{ru}_PASSWORD"] = fields.get("password", "")
+        return out
 
     @classmethod
     def load(cls, project_root: Path | str | None = None, *, required: bool = False) -> "Settings":
@@ -208,6 +241,10 @@ def _from_dict(d: dict, source: Path) -> Settings:
     if not isinstance(device_d, dict):
         device_d = {}
 
+    ssh_d = d.get("ssh") or {}
+    if not isinstance(ssh_d, dict):
+        ssh_d = {}
+
     lm_d = d.get("lmstudio") or {}
     if not isinstance(lm_d, dict):
         lm_d = {}
@@ -236,6 +273,11 @@ def _from_dict(d: dict, source: Path) -> Settings:
                 name=device_d.get("name"),
             ),
             apps={k: str(v) for k, v in (mobile_d.get("apps") or {}).items()},
+        ),
+        ssh=SSH(
+            host=ssh_d.get("host"),
+            user=ssh_d.get("user"),
+            key_path=ssh_d.get("key_path"),
         ),
         lmstudio=LMStudio(
             base_url=lm_d.get("base_url") or DEFAULT_LMSTUDIO_BASE_URL,

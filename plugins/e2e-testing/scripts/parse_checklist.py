@@ -89,7 +89,7 @@ FENCE_RE = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
 # backticked text begins with a known binary. Used as a fallback for table rows
 # (which can't host fenced code blocks) so steps like ``docker compose ps`` get
 # their command extracted instead of producing `cli-no-commands` at runtime.
-INLINE_BACKTICK_RE = re.compile(r"`([^`\n]{2,200})`")
+INLINE_BACKTICK_RE = re.compile(r"`([^`\n]{2,800})`")
 INLINE_CLI_BINARY_RE = re.compile(
     r"^\s*(curl|wget|docker|ssh|scp|rsync|npm|node|gh|kubectl|psql|sqlite3|redis-cli|"
     r"systemctl|service|journalctl|bash|sh|zsh|tail|head|cat|ls|find|grep|awk|sed|"
